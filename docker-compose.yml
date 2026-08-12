@@ -39,13 +39,14 @@ services:
       - COUCHDB_PASSWORD=obsidian-remote-internal-do-not-expose
     volumes:
       - couch_data:/opt/couchdb/data
-      - ./couchdb/local.ini:/opt/couchdb/etc/local.d/obsidian.ini:ro
+      - ./couchdb/local.ini:/opt/couchdb/etc/local.d/obsidian.ini
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:5984/_up"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:5984/_up || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 30s
+
 
 volumes:
   app_data:

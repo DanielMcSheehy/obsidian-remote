@@ -9,19 +9,17 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - COUCHDB_URL=http://couchdb:5984
-      # Couch is internal only (expose, not ports). Hardcoded — not exposed to internet, no need to rotate.
+      # Couch is internal only (expose, not ports). Hardcoded — not exposed to internet.
       - COUCHDB_USER=admin
       - COUCHDB_PASSWORD=obsidian-remote-internal-do-not-expose
       # Single password that gates /api/* and the UI. Set this in Coolify.
       - APP_PASSWORD=${APP_PASSWORD:-}
-      # optional: VAULT_NAME=obsidian (single default vault DB name)
       - VAULT_NAME=${VAULT_NAME:-obsidian}
       - DATA_DIR=/data
     volumes:
       - app_data:/data
     depends_on:
-      couchdb:
-        condition: service_healthy
+      - couchdb
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/healthz"]
       interval: 10s
@@ -30,7 +28,7 @@ services:
       start_period: 20s
 
   couchdb:
-    image: couchdb:3.3
+    build: ./couchdb
     restart: unless-stopped
     expose:
       - "5984"
@@ -39,14 +37,12 @@ services:
       - COUCHDB_PASSWORD=obsidian-remote-internal-do-not-expose
     volumes:
       - couch_data:/opt/couchdb/data
-      - ./couchdb/local.ini:/opt/couchdb/etc/local.d/obsidian.ini
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5984/_up || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
-
+      retries: 15
+      start_period: 40s
 
 volumes:
   app_data:

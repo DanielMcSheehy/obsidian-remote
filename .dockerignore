@@ -1,0 +1,8 @@
+node_modules
+apps/web/dist
+apps/api/dist
+.data
+/tmp
+.git
+.env
+*.log

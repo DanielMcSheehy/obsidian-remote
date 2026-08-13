@@ -9,7 +9,7 @@ import { config } from "./lib/config.js";
 import { ensureCouchUp } from "./lib/couch.js";
 import { authRoutes } from "./routes/auth.js";
 import { ensureDefaultVault, vaultRoutes } from "./routes/vaults.js";
-
+import { filesRoutes } from "./routes/files.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function build() {
@@ -29,7 +29,7 @@ async function build() {
 
   await authRoutes(app);
   await vaultRoutes(app);
-
+  await filesRoutes(app);
   // CouchDB proxy — forwards whatever Basic/AuthSession LiveSync sends directly to Couch.
   // Couch itself is NOT exposed externally — only via this proxy on the internal docker network.
   await app.register(httpProxy, {

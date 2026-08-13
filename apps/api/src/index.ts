@@ -9,7 +9,9 @@ import { config } from "./lib/config.js";
 import { ensureCouchUp } from "./lib/couch.js";
 import { authRoutes } from "./routes/auth.js";
 import { ensureDefaultVault, vaultRoutes } from "./routes/vaults.js";
-import { filesRoutes, ensureVault, seedWelcomeIfEmpty, vaultRoot } from "./routes/files.js";
+import { filesRoutes, ensureVault, vaultRoot } from "./routes/files.js";
+import { wikiRoutes } from "./routes/wiki.js";
+import { ensureWikiLayout } from "./lib/wiki.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function build() {
@@ -32,11 +34,32 @@ async function build() {
   // health — unauthenticated, required for Coolify rollout gate
   app.get("/healthz", async () => ({ status: "ok", uptime: process.uptime(), timestamp: Date.now() }));
   app.get("/api/health", async () => ({ status: "ok", couchUrl: config.couchUrl, publicUrl: config.publicUrl, hasPassword: !!config.appPassword, defaultVault: config.defaultVault }));
-  app.get("/api/config", async () => ({ publicUrl: config.publicUrl, couchPrefix: "/couch", defaultVault: config.defaultVault, hasPassword: !!config.appPassword }));
+  app.get("/api/config", async () => ({ publicUrl: config.publicUrl, couchPrefix: "/couch", defaultVault: config.defaultVault, hasPassword: !!config.appPassword, wiki: true }));
+  app.get("/llms.txt", async (_req, reply) => {
+    const body = [
+      "# Obsidian Remote",
+      "",
+      "This host is a markdown vault using the Karpathy LLM wiki pattern.",
+      "Auth: Authorization: Bearer APP_PASSWORD  (or X-Auth-Token)",
+      "",
+      "Start: GET /api/agent",
+      "Catalog: GET /api/files/content?path=index.md",
+      "Schema: GET /api/files/content?path=AGENTS.md",
+      "Search: GET /api/search?q=",
+      "Lint: GET /api/lint",
+      "Write: PUT /api/files/wiki/Page.md  {\"content\":\"...\"}",
+      "Log: POST /api/log  {\"kind\":\"ingest\",\"title\":\"...\"}",
+      "",
+      "raw/ is immutable. wiki/ is yours. Read index.md first.",
+      "",
+    ].join("\n");
+    return reply.type("text/plain; charset=utf-8").send(body);
+  });
 
   await authRoutes(app);
   await vaultRoutes(app);
   await filesRoutes(app);
+  await wikiRoutes(app);
   // CouchDB proxy — forwards whatever Basic/AuthSession LiveSync sends directly to Couch.
   // Couch itself is NOT exposed externally — only via this proxy on the internal docker network.
   await app.register(httpProxy, {
@@ -59,7 +82,7 @@ async function build() {
     app.log.info({ publicDir }, "serving frontend");
     await app.register(fastifyStatic, { root: publicDir, prefix: "/", wildcard: false, decorateReply: true });
     app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith("/api/") || req.url.startsWith("/couch/") || req.url.startsWith("/healthz")) {
+      if (req.url.startsWith("/api/") || req.url.startsWith("/couch/") || req.url.startsWith("/healthz") || req.url.startsWith("/llms.txt")) {
         return reply.code(404).send({ error: "not found" });
       }
       if (req.method !== "GET") return reply.code(404).send({ error: "not found" });
@@ -76,8 +99,8 @@ async function build() {
 const app = await build();
 
 ensureVault();
-const seeded = seedWelcomeIfEmpty();
-app.log.info({ vault: vaultRoot(), seeded }, `vault:${vaultRoot()}`);
+const layout = ensureWikiLayout();
+app.log.info({ vault: vaultRoot(), ...layout }, `vault:${vaultRoot()}`);
 
 ensureCouchUp(60)
   .then(async () => {

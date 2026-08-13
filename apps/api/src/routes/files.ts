@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "../lib/config.js";
 import { requireAppPassword } from "../lib/auth.js";
+import { isLogPath, isRawPath, rebuildIndex, wantsForce } from "../lib/wiki.js";
 
 const VAULT_ROOT = path.join(config.dataDir, "vault");
 
@@ -51,9 +52,10 @@ export function ensureVault(): string {
 
 export function seedWelcomeIfEmpty(): boolean {
   ensureVault();
-  const files = listFiles().filter((f) => f.type === "file" && f.path.endsWith(".md"));
+  const files = listFiles().filter((f) => f.type === "file" && f.path.endsWith(".md") && f.path !== "AGENTS.md" && f.path !== "log.md" && f.path !== "index.md");
   if (files.length > 0) return false;
-  const dest = path.join(VAULT_ROOT, "Welcome.md");
+  const dest = path.join(VAULT_ROOT, "wiki", "Welcome.md");
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
   if (!fs.existsSync(dest)) fs.writeFileSync(dest, WELCOME_MD, "utf8");
   return true;
 }
@@ -105,9 +107,10 @@ function listFiles(base = ""): Array<{ path: string; type: "file" | "dir"; size?
 /** [[target]], [[target|alias]], [[target#header]], [[target#header|alias]] → target only */
 function parseLinks(content: string): string[] {
   const links: string[] = [];
+  const stripped = content.replace(/```[\s\S]*?```/g, "").replace(/`[^`]+`/g, "");
   const wikilink = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g;
   let m: RegExpExecArray | null;
-  while ((m = wikilink.exec(content)) !== null) {
+  while ((m = wikilink.exec(stripped)) !== null) {
     const raw = m[1].trim();
     if (raw) links.push(raw);
   }
@@ -197,6 +200,9 @@ export async function filesRoutes(app: FastifyInstance) {
   app.put("/api/files/*", async (req, reply) => {
     const raw = (req.params as { "*": string })["*"] || "";
     const p = withMd(raw);
+    if ((isRawPath(p) || isLogPath(p)) && !wantsForce(req.query, req.headers as Record<string, unknown>)) {
+      return reply.code(403).send({ error: "protected", hint: "raw/ and log.md are append-only. Use ?force=1 or POST /api/log" });
+    }
     const { content } = (req.body as { content?: string }) ?? {};
     if (content === undefined) return reply.code(400).send({ error: "content required" });
     let full: string;
@@ -207,12 +213,22 @@ export async function filesRoutes(app: FastifyInstance) {
     }
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, content, "utf8");
+    if (p !== "index.md") {
+      try {
+        rebuildIndex();
+      } catch {
+        /* ignore */
+      }
+    }
     return { ok: true, path: p, size: Buffer.byteLength(content, "utf8") };
   });
 
   // DELETE /api/files/:path
   app.delete("/api/files/*", async (req, reply) => {
     const p = (req.params as { "*": string })["*"] || "";
+    if ((isRawPath(p) || isLogPath(p) || p === "AGENTS.md" || p === "index.md") && !wantsForce(req.query, req.headers as Record<string, unknown>)) {
+      return reply.code(403).send({ error: "protected", hint: "schema/raw files need ?force=1" });
+    }
     let full: string;
     try {
       full = safePath(p);
@@ -226,54 +242,64 @@ export async function filesRoutes(app: FastifyInstance) {
     } else {
       fs.unlinkSync(full);
     }
+    try {
+      rebuildIndex();
+    } catch {
+      /* ignore */
+    }
     return { ok: true };
   });
 
-  // GET /api/graph -> nodes + edges from [[wikilinks|alias]] and [[link#header]]
-  app.get("/api/graph", async () => {
-    const files = listFiles().filter((f) => f.type === "file" && f.path.endsWith(".md"));
-    const nodes: Array<{ id: string; label: string; path: string; folder: string; dangling: boolean; degree: number }> = files.map((f) => ({
-      id: f.path,
-      label: path.basename(f.path, ".md"),
-      path: f.path,
-      folder: f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "",
-      dangling: false,
-      degree: 0,
-    }));
-    const nodeSet = new Set(nodes.map((n) => n.id));
-    const edges: Array<{ source: string; target: string }> = [];
-    const seen = new Set<string>();
-    for (const f of files) {
-      const full = safePath(f.path);
-      const content = fs.readFileSync(full, "utf8");
-      const links = parseLinks(content);
-      for (const link of links) {
-        const resolved = resolveLink(link, nodes, nodeSet);
-        const key = `${f.path}\0${resolved}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        edges.push({ source: f.path, target: resolved });
-      }
-    }
-    for (const e of edges) {
-      if (!nodeSet.has(e.target)) {
-        nodes.push({
-          id: e.target,
-          label: path.basename(e.target, ".md"),
-          path: e.target,
-          folder: e.target.includes("/") ? e.target.slice(0, e.target.lastIndexOf("/")) : "",
-          dangling: true,
-          degree: 0,
-        });
-        nodeSet.add(e.target);
-      }
-    }
-    for (const e of edges) {
-      const s = nodes.find((n) => n.id === e.source);
-      const t = nodes.find((n) => n.id === e.target);
-      if (s) s.degree += 1;
-      if (t) t.degree += 1;
-    }
-    return { nodes, edges, vault: VAULT_ROOT };
+  app.get("/api/graph", async (req) => {
+    const { prefix } = (req.query as { prefix?: string }) ?? {};
+    return collectGraph(prefix);
   });
+}
+
+export function collectGraph(prefix?: string) {
+  const files = listFiles().filter((f) => f.type === "file" && f.path.endsWith(".md") && (!prefix || f.path.startsWith(prefix)));
+  const nodes: Array<{ id: string; label: string; path: string; folder: string; dangling: boolean; degree: number }> = files.map((f) => ({
+    id: f.path,
+    label: path.basename(f.path, ".md"),
+    path: f.path,
+    folder: f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "",
+    dangling: false,
+    degree: 0,
+  }));
+  const nodeSet = new Set(nodes.map((n) => n.id));
+  const edges: Array<{ source: string; target: string }> = [];
+  const seen = new Set<string>();
+  for (const f of files) {
+    const full = safePath(f.path);
+    const content = fs.readFileSync(full, "utf8");
+    if (f.path === "AGENTS.md" || f.path === "index.md" || f.path === "log.md") continue;
+    const links = parseLinks(content);
+    for (const link of links) {
+      const resolved = resolveLink(link, nodes, nodeSet);
+      const key = `${f.path}\0${resolved}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ source: f.path, target: resolved });
+    }
+  }
+  for (const e of edges) {
+    if (!nodeSet.has(e.target)) {
+      nodes.push({
+        id: e.target,
+        label: path.basename(e.target, ".md"),
+        path: e.target,
+        folder: e.target.includes("/") ? e.target.slice(0, e.target.lastIndexOf("/")) : "",
+        dangling: true,
+        degree: 0,
+      });
+      nodeSet.add(e.target);
+    }
+  }
+  for (const e of edges) {
+    const s = nodes.find((n) => n.id === e.source);
+    const t = nodes.find((n) => n.id === e.target);
+    if (s) s.degree += 1;
+    if (t) t.degree += 1;
+  }
+  return { nodes, edges, vault: VAULT_ROOT };
 }

@@ -1,7 +1,11 @@
 # Vault API — obsidian.swarmlaboratory.com
 
+Karpathy LLM wiki on disk: `raw/` (immutable), `wiki/` (agent-owned), `index.md`, `log.md`, `AGENTS.md`.
+
 Base: `https://obsidian.swarmlaboratory.com`
-Auth: `Authorization: Bearer APP_PASSWORD` (APP_PASSWORD=strong)
+Auth: `Authorization: Bearer APP_PASSWORD` (or `X-Auth-Token`)
+
+Start: `GET /llms.txt` (public) → `GET /api/agent` (auth) → read `index.md`.
 
 ## List files + folders
 
@@ -46,9 +50,22 @@ curl -H "Authorization: Bearer strong" https://obsidian.swarmlaboratory.com/api/
 
 Nodes = notes, edges = `[[wikilinks]]` parsed from content.
 
+## Search + lint + log (agents)
+
+```bash
+curl -H "Authorization: Bearer strong" "https://obsidian.swarmlaboratory.com/api/search?q=welcome"
+curl -H "Authorization: Bearer strong" https://obsidian.swarmlaboratory.com/api/lint
+curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/json" \
+  -d '{"kind":"ingest","title":"Paper X","detail":"updated wiki/Topic.md"}' \
+  https://obsidian.swarmlaboratory.com/api/log
+```
+
+`raw/` and `log.md` reject PUT/DELETE unless `?force=1`.
+
 ## Health
 
 ```bash
 curl https://obsidian.swarmlaboratory.com/healthz
+curl https://obsidian.swarmlaboratory.com/llms.txt
 curl https://obsidian.swarmlaboratory.com/api/config
 ```

@@ -18,12 +18,12 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDiamond, IconFiles, IconGraph, IconLock, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
+import { IconAlertTriangle, IconDiamond, IconFiles, IconGraph, IconLock, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { api, fileUrl } from "../api";
-import type { FileEntry, GraphPayload, MainView, NoteMode, OpenTab } from "../types";
+import type { FileEntry, GraphPayload, LintReport, MainView, NoteMode, OpenTab } from "../types";
 import { buildTree, filterTree, flattenIds } from "../lib/tree";
 import { wordCount } from "../lib/wikilinks";
 import { spring } from "../theme";
@@ -50,6 +50,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   const [palette, setPalette] = useState(false);
   const [rail, setRail] = useState(true);
   const [edges, setEdges] = useState<GraphPayload["edges"]>([]);
+  const [lint, setLint] = useState<LintReport | null>(null);
   const isResizing = useRef(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tree = useMemo(() => buildTree(files), [files]);
@@ -74,6 +75,11 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
         setEdges(g.edges);
       } catch {
         /* graph optional */
+      }
+      try {
+        setLint(await api<LintReport>("/api/lint"));
+      } catch {
+        /* lint optional */
       }
     } catch {
       /* ignore */
@@ -122,7 +128,8 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   async function createAt(raw: string) {
     const p = raw.trim().replace(/^\/+/, "");
     if (!p) return;
-    const finalPath = p.endsWith(".md") ? p : `${p}.md`;
+    const nested = p.includes("/") ? p : `wiki/${p}`;
+    const finalPath = nested.endsWith(".md") ? nested : `${nested}.md`;
     const title = finalPath.replace(/\.md$/, "").split("/").pop() || "note";
     const seed = `# ${title}\n\n`;
     try {
@@ -250,6 +257,19 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
             <Badge variant="outline" color="gray" visibleFrom="sm">
               {couchCount} Couch
             </Badge>
+            {lint && (lint.orphans.length + lint.dangling.length) > 0 && (
+              <Tooltip label={`${lint.orphans.length} orphans · ${lint.dangling.length} dangling`}>
+                <Badge
+                  variant="light"
+                  color="orange"
+                  leftSection={<IconAlertTriangle size={12} />}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => openFile("index.md")}
+                >
+                  {lint.orphans.length + lint.dangling.length} lint
+                </Badge>
+              </Tooltip>
+            )}
           </Group>
           <Group wrap="nowrap">
             <Tooltip label="Quick switcher ⌘K">
@@ -290,7 +310,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
           <form onSubmit={createFile}>
             <Group gap={6}>
               <TextInput
-                placeholder="new note → path/to/note"
+                placeholder="new note → wiki/name"
                 value={newPath}
                 onChange={(e) => setNewPath(e.target.value)}
                 size="xs"
@@ -342,7 +362,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
           <Text size="xs" c="dimmed">
             Vault <Text span ff="monospace" c="violet">{vaultPath}</Text>
             <br />
-            drag a file onto a folder · drag the edge to resize
+            wiki/ compiled · raw/ sources · drag to move
           </Text>
         </Box>
       </AppShell.Navbar>
@@ -406,9 +426,9 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                   </ThemeIcon>
                   <Title order={4}>This host is the vault</Title>
                   <Text c="dimmed" size="sm" mt="xs">
-                    Open a note, or create <Text span ff="monospace" c="violet">path/to/note</Text>.
+                    Open <Text span ff="monospace" c="violet">wiki/</Text> or create a note.
                     <br />
-                    Link with <Text span c="violet" ff="monospace">[[wikilinks]]</Text> · jump with ⌘K.
+                    Agents read <Text span ff="monospace" c="violet">index.md</Text> first · ⌘K to jump.
                   </Text>
                   <Button mt="md" variant="light" color="violet" onClick={() => setPalette(true)}>
                     Quick switcher
@@ -431,11 +451,14 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
         onOpen={openFile}
         onNew={() => {
           setPalette(false);
-          const name = window.prompt("New note path", "untitled");
+          const name = window.prompt("New note path", "wiki/untitled");
           if (name) void createAt(name);
         }}
         onGraph={() => setView("graph")}
         onTogglePreview={() => setMode((m) => (m === "edit" ? "preview" : "edit"))}
+        onOpenIndex={() => openFile("index.md")}
+        onOpenAgents={() => openFile("AGENTS.md")}
+        onOpenLog={() => openFile("log.md")}
       />
     </AppShell>
   );

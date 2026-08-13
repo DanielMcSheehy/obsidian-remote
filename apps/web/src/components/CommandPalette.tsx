@@ -16,6 +16,9 @@ export function CommandPalette({
   onNew,
   onGraph,
   onTogglePreview,
+  onOpenIndex,
+  onOpenAgents,
+  onOpenLog,
 }: {
   open: boolean;
   files: FileEntry[];
@@ -24,6 +27,9 @@ export function CommandPalette({
   onNew: () => void;
   onGraph: () => void;
   onTogglePreview: () => void;
+  onOpenIndex?: () => void;
+  onOpenAgents?: () => void;
+  onOpenLog?: () => void;
 }) {
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
@@ -44,9 +50,12 @@ export function CommandPalette({
       { id: "new", label: "New note", hint: "create", icon: <IconPlus size={14} />, run: onNew, score: fuzzy(q, "new note create") || (q ? 0 : 1) },
       { id: "graph", label: "Open graph", hint: "⌘G", icon: <IconGraph size={14} />, run: onGraph, score: fuzzy(q, "graph constellation") || (q ? 0 : 1) },
       { id: "preview", label: "Toggle edit / preview", hint: "view", icon: q ? <IconEye size={14} /> : <IconPencil size={14} />, run: onTogglePreview, score: fuzzy(q, "preview edit toggle") || (q ? 0 : 1) },
+      { id: "index", label: "Open index.md", hint: "catalog", icon: <IconFileText size={14} />, run: () => onOpenIndex?.(), score: fuzzy(q, "index catalog wiki") || (q ? 0 : 1) },
+      { id: "agents", label: "Open AGENTS.md", hint: "schema", icon: <IconFileText size={14} />, run: () => onOpenAgents?.(), score: fuzzy(q, "agents schema karpathy") || (q ? 0 : 1) },
+      { id: "log", label: "Open log.md", hint: "timeline", icon: <IconFileText size={14} />, run: () => onOpenLog?.(), score: fuzzy(q, "log timeline ingest") || (q ? 0 : 1) },
     ].filter((a) => a.score > 0);
     return [...actions, ...notes].sort((a, b) => b.score - a.score).slice(0, 18);
-  }, [files, q, onOpen, onNew, onGraph, onTogglePreview]);
+  }, [files, q, onOpen, onNew, onGraph, onTogglePreview, onOpenIndex, onOpenAgents, onOpenLog]);
 
   useEffect(() => {
     if (open) {

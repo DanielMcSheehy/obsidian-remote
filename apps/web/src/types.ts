@@ -38,3 +38,10 @@ export type OpenTab = {
 
 export type NoteMode = "edit" | "preview";
 export type MainView = "note" | "graph";
+
+export type LintReport = {
+  orphans: string[];
+  dangling: string[];
+  empty: string[];
+  wikiNotes: number;
+};

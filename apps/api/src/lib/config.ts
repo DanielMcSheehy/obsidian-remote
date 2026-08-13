@@ -1,7 +1,22 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 function env(name: string, fallback?: string) {
   return process.env[name] ?? fallback ?? "";
+}
+
+function resolveDataDir(): string {
+  const requested = env("DATA_DIR", "/data");
+  try {
+    fs.mkdirSync(requested, { recursive: true });
+    fs.accessSync(requested, fs.constants.W_OK);
+    return requested;
+  } catch {
+    const fallback = path.join(process.cwd(), ".data");
+    fs.mkdirSync(fallback, { recursive: true });
+    return fallback;
+  }
 }
 
 // Couch is NOT externally exposed — internal docker network only.
@@ -27,7 +42,7 @@ export const config = {
   couchUser: env("COUCHDB_USER", HARDCODED_COUCH_USER),
   couchPassword: env("COUCHDB_PASSWORD", HARDCODED_COUCH_PASS),
   // if user didn't set COUCHDB_PASSWORD, use hardcoded above
-  dataDir: env("DATA_DIR", "/data"),
+  dataDir: resolveDataDir(),
   appPassword: ensureAppPassword(),
   // keep jwtSecret for token signing if needed, but appPassword is the gate
   jwtSecret: env("JWT_SECRET", "") || ensureAppPassword() || crypto.randomBytes(16).toString("hex"),

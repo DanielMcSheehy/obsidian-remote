@@ -9,11 +9,18 @@ import { config } from "./lib/config.js";
 import { ensureCouchUp } from "./lib/couch.js";
 import { authRoutes } from "./routes/auth.js";
 import { ensureDefaultVault, vaultRoutes } from "./routes/vaults.js";
-import { filesRoutes } from "./routes/files.js";
+import { filesRoutes, ensureVault, seedWelcomeIfEmpty, vaultRoot } from "./routes/files.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function build() {
   const app = Fastify({ logger: true, trustProxy: true });
+  // Fastify 5 rejects empty application/json bodies. Drag/delete send that header.
+  app.addHook("onRequest", async (req) => {
+    const m = req.method;
+    if ((m === "GET" || m === "DELETE" || m === "HEAD" || m === "OPTIONS") && req.headers["content-type"]?.includes("application/json")) {
+      delete req.headers["content-type"];
+    }
+  });
 
   await app.register(cors, {
     origin: true,
@@ -50,7 +57,7 @@ async function build() {
   const publicDir = candidates.find((p) => fs.existsSync(p) && fs.existsSync(path.join(p, "index.html")));
   if (publicDir) {
     app.log.info({ publicDir }, "serving frontend");
-    await app.register(fastifyStatic, { root: publicDir, prefix: "/", wildcard: false, decorateReply: false });
+    await app.register(fastifyStatic, { root: publicDir, prefix: "/", wildcard: false, decorateReply: true });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith("/api/") || req.url.startsWith("/couch/") || req.url.startsWith("/healthz")) {
         return reply.code(404).send({ error: "not found" });
@@ -68,6 +75,10 @@ async function build() {
 
 const app = await build();
 
+ensureVault();
+const seeded = seedWelcomeIfEmpty();
+app.log.info({ vault: vaultRoot(), seeded }, `vault:${vaultRoot()}`);
+
 ensureCouchUp(60)
   .then(async () => {
     app.log.info("couchdb reachable");
@@ -76,4 +87,4 @@ ensureCouchUp(60)
   .catch((e) => app.log.warn(e, "couchdb not reachable yet"));
 
 await app.listen({ port: config.port, host: config.host });
-app.log.info(`obsidian-remote listening on ${config.host}:${config.port} publicUrl=${config.publicUrl} defaultVault=${config.defaultVault} auth=${config.appPassword ? "password-set" : "open"}`);
+app.log.info(`obsidian-remote listening on ${config.host}:${config.port} publicUrl=${config.publicUrl} defaultVault=${config.defaultVault} auth=${config.appPassword ? "password-set" : "open"} vault:${vaultRoot()}`);

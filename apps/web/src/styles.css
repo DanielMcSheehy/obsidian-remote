@@ -1,0 +1,257 @@
+:root {
+  --bg: #09090d;
+  --bg-2: #0c0b12;
+  --glass: rgba(16, 14, 26, 0.62);
+  --glass-strong: rgba(18, 16, 28, 0.78);
+  --glass-border: rgba(167, 139, 250, 0.16);
+  --inset: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --blur: blur(20px) saturate(180%);
+  --violet: #8b5cf6;
+  --violet-2: #a78bfa;
+  --pink: #ec4899;
+  --text: #eceaf4;
+  --muted: #8b8798;
+  --line: rgba(167, 139, 250, 0.12);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(ellipse 900px 560px at 8% -10%, rgba(124, 58, 237, 0.18), transparent 58%),
+    radial-gradient(ellipse 700px 480px at 100% 0%, rgba(236, 72, 153, 0.08), transparent 50%),
+    var(--bg);
+}
+
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.glass {
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--inset), 0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
+.glass-strong {
+  background: var(--glass-strong);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--inset), 0 12px 40px rgba(124, 58, 237, 0.12);
+}
+
+.resize-handle {
+  position: fixed;
+  top: 56px;
+  bottom: 28px;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 80;
+  background: transparent;
+}
+.resize-handle:hover,
+.resize-handle.is-active {
+  background: linear-gradient(180deg, transparent, rgba(139, 92, 246, 0.45), transparent);
+}
+
+.editor {
+  flex: 1;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  padding: 28px 32px 48px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13.5px;
+  line-height: 1.85;
+  caret-color: var(--violet-2);
+}
+
+.md-preview {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 36px 40px 64px;
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 17.5px;
+  line-height: 1.75;
+  color: var(--text);
+}
+
+.md-preview h1,
+.md-preview h2,
+.md-preview h3,
+.md-preview h4 {
+  font-family: Inter, system-ui, sans-serif;
+  letter-spacing: -0.03em;
+  font-weight: 650;
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em;
+}
+
+.md-preview h1 {
+  font-size: 2.05rem;
+  margin-top: 0;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-preview h2 { font-size: 1.45rem; }
+.md-preview h3 { font-size: 1.15rem; color: #ddd8f0; }
+
+.md-preview p { margin: 0.85em 0; }
+
+.md-preview a,
+.md-preview .wiki {
+  color: #c4b5fd;
+  text-decoration: underline;
+  text-decoration-color: rgba(167, 139, 250, 0.45);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.md-preview a:hover,
+.md-preview .wiki:hover { color: #ede9fe; }
+
+.md-preview code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.84em;
+  background: rgba(124, 58, 237, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.16);
+  padding: 0.08em 0.38em;
+  border-radius: 5px;
+}
+
+.md-preview pre {
+  background: rgba(8, 8, 14, 0.72);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--inset);
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow: auto;
+}
+.md-preview pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.md-preview blockquote {
+  margin: 1.1em 0;
+  padding: 0.15em 1em;
+  border-left: 3px solid var(--violet);
+  background: rgba(124, 58, 237, 0.07);
+  border-radius: 0 10px 10px 0;
+  color: #c8c4d8;
+}
+
+.md-preview ul, .md-preview ol { padding-left: 1.3em; }
+.md-preview li { margin: 0.25em 0; }
+.md-preview hr { border: none; border-top: 1px solid var(--line); margin: 2em 0; }
+.md-preview img { max-width: 100%; border-radius: 10px; }
+
+.wiki-suggest {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 16px;
+  max-height: 220px;
+  overflow: auto;
+  z-index: 5;
+  border-radius: 12px;
+}
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(6, 6, 10, 0.55);
+  backdrop-filter: blur(10px) saturate(140%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+}
+
+.palette {
+  width: min(560px, calc(100vw - 32px));
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.tab-row {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-row::-webkit-scrollbar { display: none; }
+
+.note-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 36px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+}
+.note-tab.active {
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.16), rgba(124, 58, 237, 0.04));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.note-tab .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: #f59e0b;
+}
+
+.crumb { font-size: 12px; color: var(--muted); letter-spacing: 0.01em; }
+
+.right-rail {
+  width: 232px;
+  flex-shrink: 0;
+  height: 100%;
+  border-left: 1px solid rgba(167, 139, 250, 0.12);
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 61.99em) {
+  .right-rail { display: none; }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.22);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}

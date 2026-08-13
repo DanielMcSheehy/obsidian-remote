@@ -283,8 +283,8 @@ function GraphView({ onOpen }: { onOpen: (p: string) => void }) {
       try {
         const mod = await import("force-graph");
         if (!ref.current) return;
-        const ForceGraph = (mod as unknown as { default: unknown }).default as unknown as (el: HTMLElement) => { graphData: (d: { nodes: unknown[]; links: unknown[] }) => void; backgroundColor: (c: string) => void; nodeLabel: (f: (n: { id: string }) => string) => void; onNodeClick: (f: (n: { id: string }) => void) => void; width: (n: number) => void; height: (n: number) => void; };
-        const el = ForceGraph(ref.current);
+        const ForceGraph = (mod as unknown as { default: unknown }).default as unknown as () => (el: HTMLElement) => { graphData: (d: { nodes: unknown[]; links: unknown[] }) => void; backgroundColor: (c: string) => void; nodeLabel: (f: (n: { id: string }) => string) => void; onNodeClick: (f: (n: { id: string }) => void) => void; width: (n: number) => void; height: (n: number) => void; };
+        const el = ForceGraph()(ref.current);
         const w = ref.current.clientWidth || 800; const h = ref.current.clientHeight || 500;
         ref.current.style.height = "100%";
         el.width(w); el.height(h);

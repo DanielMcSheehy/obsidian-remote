@@ -27,28 +27,28 @@ export function AuthScreen({ onAuth }: { onAuth: (token: string) => void }) {
   }
 
   return (
-    <Box style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", background: "#09090d" }}>
+    <Box style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
       <motion.div
         initial={{ scale: 0.85, opacity: 0.45 }}
-        animate={{ scale: 1.05, opacity: 0.75 }}
-        transition={{ duration: 5, repeat: Infinity, repeatType: "reverse" }}
-        style={{ position: "absolute", width: 640, height: 640, borderRadius: "50%", background: "radial-gradient(circle, #7c3aed55, transparent 70%)", top: -180, left: -140, filter: "blur(48px)" }}
+        animate={{ scale: 1.08, opacity: 0.8 }}
+        transition={{ duration: 8, repeat: Infinity, repeatType: "reverse" }}
+        style={{ position: "absolute", width: 720, height: 720, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.45), transparent 68%)", top: -220, left: -180, filter: "blur(56px)" }}
       />
       <motion.div
-        initial={{ scale: 0.9, opacity: 0.35 }}
-        animate={{ scale: 1.12, opacity: 0.6 }}
-        transition={{ duration: 6.5, repeat: Infinity, repeatType: "reverse", delay: 0.6 }}
-        style={{ position: "absolute", width: 720, height: 720, borderRadius: "50%", background: "radial-gradient(circle, #ec489955, transparent 70%)", bottom: -240, right: -180, filter: "blur(48px)" }}
+        initial={{ scale: 0.9, opacity: 0.3 }}
+        animate={{ scale: 1.14, opacity: 0.55 }}
+        transition={{ duration: 10, repeat: Infinity, repeatType: "reverse", delay: 0.8 }}
+        style={{ position: "absolute", width: 780, height: 780, borderRadius: "50%", background: "radial-gradient(circle, rgba(244,114,182,0.32), transparent 70%)", bottom: -280, right: -200, filter: "blur(60px)" }}
       />
-      <motion.div initial={{ opacity: 0, y: 18, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={spring} style={{ position: "relative", zIndex: 1 }}>
-        <Card className="glass-strong" shadow="xl" radius="xl" padding="xl" withBorder style={{ width: 440, borderColor: "rgba(124,58,237,0.32)" }}>
+      <motion.div initial={{ opacity: 0, y: 22, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={spring} style={{ position: "relative", zIndex: 1 }}>
+        <Card className="glass-strong" shadow="xl" radius={28} padding="xl" withBorder style={{ width: 440 }}>
           <Stack align="center" gap="xs" mb="lg">
             <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ ...spring, delay: 0.12 }}>
-              <ThemeIcon size={72} radius="xl" variant="gradient" gradient={{ from: "violet", to: "pink" }} style={{ boxShadow: "0 0 34px rgba(124,58,237,0.5)" }}>
+              <ThemeIcon size={76} radius="xl" variant="gradient" gradient={{ from: "violet", to: "pink" }} style={{ boxShadow: "0 0 48px rgba(167,139,250,0.55)" }}>
                 <IconDiamond size={40} />
               </ThemeIcon>
             </motion.div>
-            <Title order={2} style={{ letterSpacing: -1, background: "linear-gradient(90deg, #fff, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            <Title order={2} className="wordmark" style={{ fontSize: 34 }}>
               Obsidian Remote
             </Title>
             <Text c="dimmed" size="sm" ta="center">

@@ -18,13 +18,14 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertTriangle, IconDiamond, IconFiles, IconGraph, IconLock, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowBackUp, IconDiamond, IconFiles, IconGraph, IconLock, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { api, fileUrl } from "../api";
 import type { FileEntry, GraphPayload, LintReport, MainView, NoteMode, OpenTab } from "../types";
 import { buildTree, filterTree, flattenIds } from "../lib/tree";
+import { describeOp, pushOp, type VaultOp } from "../lib/undo";
 import { wordCount } from "../lib/wikilinks";
 import { spring } from "../theme";
 import { SortableFile } from "./FileTree";
@@ -51,6 +52,10 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   const [rail, setRail] = useState(true);
   const [edges, setEdges] = useState<GraphPayload["edges"]>([]);
   const [lint, setLint] = useState<LintReport | null>(null);
+  const [history, setHistory] = useState<VaultOp[]>([]);
+  const historyRef = useRef<VaultOp[]>([]);
+  const tabsRef = useRef<OpenTab[]>([]);
+  const selectedRef = useRef<string | null>(null);
   const isResizing = useRef(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tree = useMemo(() => buildTree(files), [files]);
@@ -58,6 +63,17 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   const flatIds = useMemo(() => flattenIds(filtered), [filtered]);
   const active = tabs.find((t) => t.path === selected) || null;
   const counts = wordCount(active?.content || "");
+  tabsRef.current = tabs;
+  selectedRef.current = selected;
+  historyRef.current = history;
+
+  function record(op: VaultOp) {
+    setHistory((h) => {
+      const next = pushOp(h, op);
+      historyRef.current = next;
+      return next;
+    });
+  }
 
   async function refreshFiles() {
     try {
@@ -102,7 +118,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
     try {
       const r = await api<{ content: string; path: string }>(`/api/files/content?path=${encodeURIComponent(p)}`);
       const path = r.path || p;
-      setTabs((prev) => [...prev.filter((t) => t.path !== path), { path, content: r.content, dirty: false }]);
+      setTabs((prev) => [...prev.filter((t) => t.path !== path), { path, content: r.content, saved: r.content, dirty: false }]);
       setSelected(path);
       setView("note");
       setMode(nextMode || "preview");
@@ -113,11 +129,12 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   }
 
   async function save(path = selected) {
-    const tab = tabs.find((t) => t.path === path);
+    const tab = tabsRef.current.find((t) => t.path === path);
     if (!tab) return;
     try {
       await api(fileUrl(tab.path), { method: "PUT", body: JSON.stringify({ content: tab.content }) });
-      setTabs((prev) => prev.map((t) => (t.path === tab.path ? { ...t, dirty: false } : t)));
+      if (tab.saved !== tab.content) record({ kind: "write", path: tab.path, before: tab.saved, after: tab.content });
+      setTabs((prev) => prev.map((t) => (t.path === tab.path ? { ...t, dirty: false, saved: tab.content } : t)));
       notifications.show({ title: "Saved", message: tab.path, color: "violet" });
       refreshFiles();
     } catch (e) {
@@ -134,6 +151,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
     const seed = `# ${title}\n\n`;
     try {
       await api(fileUrl(finalPath), { method: "PUT", body: JSON.stringify({ content: seed }) });
+      record({ kind: "create", path: finalPath, after: seed });
       setNewPath("");
       await refreshFiles();
       await openFile(finalPath, "edit");
@@ -147,13 +165,34 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
     await createAt(newPath);
   }
 
+  async function snapshot(p: string): Promise<Array<{ path: string; content: string }>> {
+    const targets = files.filter((f) => f.type === "file" && (f.path === p || f.path.startsWith(`${p}/`)));
+    const out: Array<{ path: string; content: string }> = [];
+    for (const t of targets) {
+      const open = tabsRef.current.find((tab) => tab.path === t.path);
+      if (open) {
+        out.push({ path: t.path, content: open.saved });
+        continue;
+      }
+      try {
+        const r = await api<{ content: string }>(`/api/files/content?path=${encodeURIComponent(t.path)}`);
+        out.push({ path: t.path, content: r.content });
+      } catch {
+        /* skip unreadables */
+      }
+    }
+    return out;
+  }
+
   async function delFile(p: string) {
     if (!confirm(`Delete ${p}?`)) return;
     try {
+      const snap = await snapshot(p);
       await api(fileUrl(p), { method: "DELETE" });
+      if (snap.length) record({ kind: "delete", files: snap });
       setTabs((prev) => prev.filter((t) => t.path !== p && !t.path.startsWith(`${p}/`)));
       if (selected === p || selected?.startsWith(`${p}/`)) {
-        const next = tabs.find((t) => t.path !== p && !t.path.startsWith(`${p}/`));
+        const next = tabsRef.current.find((t) => t.path !== p && !t.path.startsWith(`${p}/`));
         setSelected(next?.path ?? null);
       }
       refreshFiles();
@@ -177,6 +216,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       const r = await api<{ content: string }>(`/api/files/content?path=${encodeURIComponent(activeId)}`);
       await api(fileUrl(dest), { method: "PUT", body: JSON.stringify({ content: r.content }) });
       await api(fileUrl(activeId), { method: "DELETE" });
+      record({ kind: "move", from: activeId, to: dest, content: r.content });
       setTabs((prev) => prev.map((t) => (t.path === activeId ? { ...t, path: dest } : t)));
       if (selected === activeId) setSelected(dest);
       refreshFiles();
@@ -185,6 +225,48 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       notifications.show({ title: "Move failed", message: String(err), color: "red" });
     }
   }
+
+  async function undo() {
+    const tab = tabsRef.current.find((t) => t.path === selectedRef.current);
+    if (tab?.dirty) {
+      setTabs((prev) => prev.map((t) => (t.path === tab.path ? { ...t, content: t.saved, dirty: false } : t)));
+      notifications.show({ title: "Reverted", message: tab.path, color: "violet" });
+      return;
+    }
+    const op = historyRef.current[historyRef.current.length - 1];
+    if (!op) {
+      notifications.show({ title: "Nothing to undo", message: "No vault changes in this session", color: "gray" });
+      return;
+    }
+    setHistory((h) => h.slice(0, -1));
+    historyRef.current = historyRef.current.slice(0, -1);
+    try {
+      if (op.kind === "write") {
+        await api(fileUrl(op.path), { method: "PUT", body: JSON.stringify({ content: op.before }) });
+        setTabs((prev) => prev.map((t) => (t.path === op.path ? { ...t, content: op.before, saved: op.before, dirty: false } : t)));
+      } else if (op.kind === "create") {
+        await api(`${fileUrl(op.path)}?force=1`, { method: "DELETE" });
+        setTabs((prev) => prev.filter((t) => t.path !== op.path));
+        if (selectedRef.current === op.path) setSelected(null);
+      } else if (op.kind === "delete") {
+        for (const f of op.files) {
+          await api(`${fileUrl(f.path)}?force=1`, { method: "PUT", body: JSON.stringify({ content: f.content }) });
+        }
+      } else if (op.kind === "move") {
+        await api(fileUrl(op.from), { method: "PUT", body: JSON.stringify({ content: op.content }) });
+        await api(fileUrl(op.to), { method: "DELETE" });
+        setTabs((prev) => prev.map((t) => (t.path === op.to ? { ...t, path: op.from } : t)));
+        if (selectedRef.current === op.to) setSelected(op.from);
+      }
+      await refreshFiles();
+      notifications.show({ title: "Undone", message: describeOp(op), color: "violet" });
+    } catch (e) {
+      notifications.show({ title: "Undo failed", message: String(e), color: "red" });
+    }
+  }
+
+  const nextUndo = active?.dirty ? `Revert unsaved ${active.path}` : describeOp(history[history.length - 1]);
+  const canUndo = !!active?.dirty || history.length > 0;
 
   function closeTab(p: string) {
     const tab = tabs.find((t) => t.path === p);
@@ -200,6 +282,11 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       if (meta && e.key.toLowerCase() === "s") {
         e.preventDefault();
         if (selected) save(selected);
+      } else if (meta && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === "TEXTAREA" || tag === "INPUT") return;
+        e.preventDefault();
+        void undo();
       } else if (meta && (e.key.toLowerCase() === "k" || e.key.toLowerCase() === "o")) {
         e.preventDefault();
         setPalette(true);
@@ -210,7 +297,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [selected, tabs]);
+  }, [selected, tabs, history]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -239,7 +326,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       padding={0}
       style={{ background: "transparent" }}
     >
-      <AppShell.Header className="glass-strong" style={{ borderBottom: "1px solid rgba(124,58,237,0.16)", borderRadius: 0 }}>
+      <AppShell.Header className="glass-strong header-shine" style={{ borderBottom: "1px solid rgba(214,188,255,0.12)", borderRadius: 0 }}>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group wrap="nowrap">
             <Burger opened={opened} onClick={() => setOpened((o) => !o)} hiddenFrom="sm" size="sm" color="violet" />
@@ -248,8 +335,8 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                 <IconDiamond size={20} />
               </ThemeIcon>
             </motion.div>
-            <Title order={4} style={{ letterSpacing: -0.5, background: "linear-gradient(90deg, #fff, #c4b5fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              Obsidian Remote
+            <Title order={4} className="wordmark" style={{ fontSize: 22 }}>
+              Obsidian
             </Title>
             <Badge variant="gradient" gradient={{ from: "violet", to: "pink" }} leftSection={<IconFiles size={12} />}>
               {noteFiles} notes
@@ -272,6 +359,11 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
             )}
           </Group>
           <Group wrap="nowrap">
+            <Tooltip label={canUndo ? `${nextUndo} · ⌘Z` : "Nothing to undo"}>
+              <ActionIcon variant="subtle" color={canUndo ? "violet" : "gray"} onClick={() => void undo()} disabled={!canUndo} title="Undo">
+                <IconArrowBackUp size={16} />
+              </ActionIcon>
+            </Tooltip>
             <Tooltip label="Quick switcher ⌘K">
               <Button
                 variant="light"
@@ -424,7 +516,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                   <ThemeIcon size={56} radius="xl" variant="gradient" gradient={{ from: "violet", to: "pink" }} mb="md" mx="auto">
                     <IconSparkles size={28} />
                   </ThemeIcon>
-                  <Title order={4}>This host is the vault</Title>
+                  <Title order={3} className="wordmark" style={{ fontSize: 32 }}>This host is the vault</Title>
                   <Text c="dimmed" size="sm" mt="xs">
                     Open <Text span ff="monospace" c="violet">wiki/</Text> or create a note.
                     <br />
@@ -459,6 +551,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
         onOpenIndex={() => openFile("index.md")}
         onOpenAgents={() => openFile("AGENTS.md")}
         onOpenLog={() => openFile("log.md")}
+        onUndo={() => void undo()}
       />
     </AppShell>
   );

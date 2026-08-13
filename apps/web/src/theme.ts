@@ -21,8 +21,8 @@ export const theme = createTheme({
       "#4c1d95",
     ],
   },
-  fontFamily: "Inter, system-ui, -apple-system, sans-serif",
-  headings: { fontFamily: "Inter, system-ui, sans-serif", fontWeight: "650" },
+  fontFamily: "Outfit, Inter, system-ui, sans-serif",
+  headings: { fontFamily: "Outfit, Inter, system-ui, sans-serif", fontWeight: "600" },
   components: {
     Tooltip: { defaultProps: { withArrow: true, openDelay: 280 } },
     Notification: { defaultProps: { radius: "md" } },

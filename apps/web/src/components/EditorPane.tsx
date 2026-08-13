@@ -183,8 +183,8 @@ export function EditorPane({
               </AnimatePresence>
             </motion.div>
           ) : (
-            <motion.div key="preview" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring} style={{ flex: 1, overflow: "auto" }}>
-              <Box className="glass md-preview" style={{ margin: "20px auto 40px", borderRadius: 16 }}>
+            <motion.div key="preview" className="preview-stage" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring}>
+              <Box className="glass md-preview">
                 <ReactMarkdown
                   components={{
                     h1: ({ children }) => <h1 id={slugify(String(children))}>{children}</h1>,

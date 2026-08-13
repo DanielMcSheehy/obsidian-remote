@@ -46,21 +46,14 @@ export function SortableFile({
         justify="space-between"
         wrap="nowrap"
         onClick={() => onOpen(node.path)}
-        style={{
-          padding: "6px 8px",
-          marginLeft: depth * 10,
-          borderRadius: 8,
-          cursor: "pointer",
-          background: active ? "linear-gradient(90deg, rgba(124,58,237,0.2), rgba(124,58,237,0.05))" : "transparent",
-          border: active ? "1px solid rgba(124,58,237,0.32)" : "1px solid transparent",
-          boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.08)" : undefined,
-        }}
+        className={`tree-row${active ? " is-active" : ""}`}
+        style={{ marginLeft: depth * 10 }}
       >
         <Group gap={8} wrap="nowrap" style={{ overflow: "hidden" }}>
           <ThemeIcon size="xs" variant={active ? "gradient" : "light"} gradient={{ from: "violet", to: "pink" }} color={active ? "violet" : "gray"}>
             <IconBook size={12} />
           </ThemeIcon>
-          <Text size="sm" truncate style={{ color: active ? "#fff" : "#ccc" }}>
+          <Text size="sm" truncate style={{ color: active ? "#fff" : "#d4cde4" }}>
             {node.name.replace(/\.md$/i, "")}
           </Text>
         </Group>
@@ -96,7 +89,8 @@ function FolderNode({
         justify="space-between"
         wrap="nowrap"
         onClick={() => setOpen((o) => !o)}
-        style={{ padding: "6px 8px", marginLeft: depth * 10, borderRadius: 8, cursor: "pointer" }}
+        className="tree-row"
+        style={{ marginLeft: depth * 10 }}
       >
         <Group gap={6} wrap="nowrap">
           <ActionIcon size="xs" variant="subtle" color="gray">

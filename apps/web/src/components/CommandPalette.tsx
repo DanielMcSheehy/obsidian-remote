@@ -19,6 +19,7 @@ export function CommandPalette({
   onOpenIndex,
   onOpenAgents,
   onOpenLog,
+  onUndo,
 }: {
   open: boolean;
   files: FileEntry[];
@@ -30,6 +31,7 @@ export function CommandPalette({
   onOpenIndex?: () => void;
   onOpenAgents?: () => void;
   onOpenLog?: () => void;
+  onUndo?: () => void;
 }) {
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
@@ -53,9 +55,10 @@ export function CommandPalette({
       { id: "index", label: "Open index.md", hint: "catalog", icon: <IconFileText size={14} />, run: () => onOpenIndex?.(), score: fuzzy(q, "index catalog wiki") || (q ? 0 : 1) },
       { id: "agents", label: "Open AGENTS.md", hint: "schema", icon: <IconFileText size={14} />, run: () => onOpenAgents?.(), score: fuzzy(q, "agents schema karpathy") || (q ? 0 : 1) },
       { id: "log", label: "Open log.md", hint: "timeline", icon: <IconFileText size={14} />, run: () => onOpenLog?.(), score: fuzzy(q, "log timeline ingest") || (q ? 0 : 1) },
+      { id: "undo", label: "Undo last change", hint: "⌘Z", icon: <IconFileText size={14} />, run: () => onUndo?.(), score: fuzzy(q, "undo revert") || (q ? 0 : 1) },
     ].filter((a) => a.score > 0);
     return [...actions, ...notes].sort((a, b) => b.score - a.score).slice(0, 18);
-  }, [files, q, onOpen, onNew, onGraph, onTogglePreview, onOpenIndex, onOpenAgents, onOpenLog]);
+  }, [files, q, onOpen, onNew, onGraph, onTogglePreview, onOpenIndex, onOpenAgents, onOpenLog, onUndo]);
 
   useEffect(() => {
     if (open) {

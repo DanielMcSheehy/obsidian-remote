@@ -33,6 +33,7 @@ export type GraphPayload = {
 export type OpenTab = {
   path: string;
   content: string;
+  saved: string;
   dirty: boolean;
 };
 

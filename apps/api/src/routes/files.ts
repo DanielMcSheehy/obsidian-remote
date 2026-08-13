@@ -15,20 +15,29 @@ This host **is** the vault. Every note is a real \`*.md\` file on \`/data/vault\
 - Create \`path/to/note\` in the sidebar
 - \`⌘/Ctrl+S\` saves · \`⌘/Ctrl+K\` jumps to any note
 - Drag a file onto a folder to move it
+- Use the edit toolbar for a quote, code block, link, or image
+
+> Quotes are just markdown. They render like this.
+
+\`\`\`ts
+// fenced blocks keep a language label + copy, like reading view
+const vault = "/data/vault";
+\`\`\`
 
 ## Link
 
-Wikilinks become graph edges:
+Obsidian labels are the \`|\` alias. External links are normal markdown.
 
-- [[Welcome]]
-- [[Welcome#Write|the write section]]
-- [[ideas/spark]]
+- [[Welcome]] — same note
+- [[Welcome#Write|the write section]] — alias / label
+- [[ideas/spark]] — unresolved until that note exists
+- [Obsidian help](https://help.obsidian.md/Links) — external
+
+Images: \`![[photo.png]]\` or \`![](https://…)\`. Embed a note with \`![[Welcome]]\`.
 
 ## Graph
 
-Open **Graph** to see the vault as a constellation. Click a node to open it.
-
-Start a note. Link it. That's the whole trick.
+Open **Graph** to see every \`[[wikilink]]\` as an edge. Click a node to open it.
 `;
 
 export function vaultRoot(): string {
@@ -155,6 +164,33 @@ export async function filesRoutes(app: FastifyInstance) {
     }
     const content = fs.readFileSync(full, "utf8");
     return { path: p, content };
+  });
+
+  // GET /api/files/raw?path= — images / binaries (token query works for <img>)
+  app.get("/api/files/raw", async (req, reply) => {
+    const { path: p } = req.query as { path?: string };
+    if (!p) return reply.code(400).send({ error: "path query required" });
+    let full: string;
+    try {
+      full = safePath(p);
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return reply.code(404).send({ error: "not found" });
+    const ext = path.extname(full).toLowerCase();
+    const types: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+      ".svg": "image/svg+xml",
+      ".bmp": "image/bmp",
+      ".ico": "image/x-icon",
+      ".pdf": "application/pdf",
+    };
+    const buf = fs.readFileSync(full);
+    return reply.type(types[ext] || "application/octet-stream").send(buf);
   });
 
   // PUT /api/files/:path -> create/update

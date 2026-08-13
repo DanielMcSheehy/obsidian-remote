@@ -40,7 +40,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<MainView>("note");
-  const [mode, setMode] = useState<NoteMode>("edit");
+  const [mode, setMode] = useState<NoteMode>("preview");
   const [newPath, setNewPath] = useState("");
   const [search, setSearch] = useState("");
   const [couchCount, setCouchCount] = useState(0);
@@ -99,7 +99,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       setTabs((prev) => [...prev.filter((t) => t.path !== path), { path, content: r.content, dirty: false }]);
       setSelected(path);
       setView("note");
-      setMode(nextMode || "edit");
+      setMode(nextMode || "preview");
       setOpened(false);
     } catch {
       notifications.show({ title: "Missing note", message: p, color: "orange" });
@@ -129,7 +129,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       await api(fileUrl(finalPath), { method: "PUT", body: JSON.stringify({ content: seed }) });
       setNewPath("");
       await refreshFiles();
-      await openFile(finalPath);
+      await openFile(finalPath, "edit");
     } catch (err) {
       notifications.show({ title: "Create failed", message: String(err), color: "red" });
     }

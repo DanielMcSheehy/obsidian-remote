@@ -27,6 +27,19 @@ export function wikilinksToMarkdown(content: string): string {
   });
 }
 
+const IMAGE_WIKI = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
+
+/** Obsidian: ![[img|alt]], ![[note]], [[note|label]], [[note#h|label]] */
+export function vaultToMarkdown(content: string): string {
+  let out = content;
+  out = out.replace(/!\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]/g, (_m, target: string, alias: string) => {
+    const t = target.trim();
+    if (IMAGE_WIKI.test(t)) return `![${(alias || t).trim()}](vault:${t})`;
+    return `[${(alias || t).trim()}](embed:${t})`;
+  });
+  return wikilinksToMarkdown(out);
+}
+
 export function headings(md: string): Array<{ level: number; text: string; id: string }> {
   const stripped = stripFrontmatter(md);
   const out: Array<{ level: number; text: string; id: string }> = [];

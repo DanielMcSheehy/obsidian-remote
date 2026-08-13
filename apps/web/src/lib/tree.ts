@@ -72,3 +72,10 @@ export function resolveNote(files: FileEntry[], href: string): string {
   if (base) return base.path;
   return target;
 }
+
+export function noteExists(files: FileEntry[], href: string): boolean {
+  const resolved = resolveNote(files, href);
+  return files.some((f) => f.type === "file" && f.path === resolved);
+}
+
+export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;

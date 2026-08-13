@@ -1,12 +1,16 @@
 import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { ActionIcon, Badge, Box, Button, Group, Tabs, Text, UnstyledButton } from "@mantine/core";
-import { IconDeviceFloppy, IconEye, IconPencil, IconX } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconExternalLink, IconEye, IconPencil, IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { FileEntry, NoteMode, OpenTab } from "../types";
-import { resolveNote } from "../lib/tree";
-import { fuzzy, slugify, stripFrontmatter, wikilinkQueryBeforeCursor, wikilinksToMarkdown } from "../lib/wikilinks";
+import { rawFileUrl } from "../api";
+import { noteExists, resolveNote } from "../lib/tree";
+import { fuzzy, slugify, stripFrontmatter, vaultToMarkdown, wikilinkQueryBeforeCursor } from "../lib/wikilinks";
 import { spring } from "../theme";
+import { CodeBlock } from "./CodeBlock";
+import { FormatBar } from "./FormatBar";
+import { NoteEmbed } from "./NoteEmbed";
 
 export function EditorPane({
   tabs,
@@ -33,6 +37,7 @@ export function EditorPane({
 }) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
+  const [sel, setSel] = useState({ start: 0, end: 0 });
   const wiki = mode === "edit" ? wikilinkQueryBeforeCursor(active.content, caret) : null;
   const suggestions = useMemo(() => {
     if (!wiki) return [];
@@ -118,7 +123,18 @@ export function EditorPane({
       <Box style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex" }}>
         <AnimatePresence mode="wait">
           {mode === "edit" ? (
-            <motion.div key="edit" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring} style={{ flex: 1, display: "flex", minHeight: 0 }}>
+            <motion.div key="edit" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring} style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <FormatBar
+                value={active.content}
+                selection={sel}
+                focus={() => ta.current?.focus()}
+                onChange={(next, range) => {
+                  onChange(next);
+                  setSel(range);
+                  setCaret(range.end);
+                  requestAnimationFrame(() => ta.current?.setSelectionRange(range.start, range.end));
+                }}
+              />
               <textarea
                 ref={ta}
                 className="editor"
@@ -126,10 +142,23 @@ export function EditorPane({
                 onChange={(e) => {
                   onChange(e.target.value);
                   setCaret(e.target.selectionStart);
+                  setSel({ start: e.target.selectionStart, end: e.target.selectionEnd });
                 }}
-                onKeyUp={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
-                onClick={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
-                placeholder={"# Hello\n\n[[link]] to another note — it will show in the graph."}
+                onKeyUp={(e) => {
+                  const t = e.target as HTMLTextAreaElement;
+                  setCaret(t.selectionStart);
+                  setSel({ start: t.selectionStart, end: t.selectionEnd });
+                }}
+                onClick={(e) => {
+                  const t = e.target as HTMLTextAreaElement;
+                  setCaret(t.selectionStart);
+                  setSel({ start: t.selectionStart, end: t.selectionEnd });
+                }}
+                onSelect={(e) => {
+                  const t = e.target as HTMLTextAreaElement;
+                  setSel({ start: t.selectionStart, end: t.selectionEnd });
+                }}
+                placeholder={"# Hello\n\n[[link|label]] · [web](https://…) · ```js code```"}
                 spellCheck={false}
               />
               <AnimatePresence>
@@ -162,13 +191,30 @@ export function EditorPane({
                     h2: ({ children }) => <h2 id={slugify(String(children))}>{children}</h2>,
                     h3: ({ children }) => <h3 id={slugify(String(children))}>{children}</h3>,
                     h4: ({ children }) => <h4 id={slugify(String(children))}>{children}</h4>,
+                    pre: ({ children }) => <>{children}</>,
+                    code: ({ className, children }) => {
+                      const lang = /language-([\w-]+)/.exec(className || "")?.[1];
+                      const text = String(children).replace(/\n$/, "");
+                      if (lang || text.includes("\n")) return <CodeBlock language={lang}>{text}</CodeBlock>;
+                      return <code>{children}</code>;
+                    },
+                    img: ({ src, alt }) => {
+                      const raw = src || "";
+                      const url = raw.startsWith("vault:") ? rawFileUrl(raw.slice(6)) : raw;
+                      return <img src={url} alt={alt || ""} />;
+                    },
                     a: ({ href, children }) => {
-                      const isWiki = href && !href.startsWith("http") && !href.startsWith("mailto:");
+                      if (href?.startsWith("embed:")) {
+                        return <NoteEmbed target={href.slice(6)} files={files} onOpen={onOpen} />;
+                      }
+                      const isWiki = href && !href.startsWith("http") && !href.startsWith("mailto:") && !href.startsWith("#");
                       if (isWiki) {
                         const [file, hash] = href.split("#");
+                        const exists = file ? noteExists(files, file) : true;
                         return (
                           <span
-                            className="wiki"
+                            className={exists ? "wiki" : "wiki is-unresolved"}
+                            title={exists ? file : `Unresolved: ${file}`}
                             onClick={() => {
                               if (file) onOpen(resolveNote(files, file));
                               if (hash) {
@@ -181,14 +227,15 @@ export function EditorPane({
                         );
                       }
                       return (
-                        <a href={href} target="_blank" rel="noreferrer">
+                        <a href={href} target="_blank" rel="noreferrer" className="ext-link">
                           {children}
+                          <IconExternalLink size={12} className="ext-ico" />
                         </a>
                       );
                     },
                   }}
                 >
-                  {wikilinksToMarkdown(stripFrontmatter(active.content)) || "*Empty note*"}
+                  {vaultToMarkdown(stripFrontmatter(active.content)) || "*Empty note*"}
                 </ReactMarkdown>
               </Box>
             </motion.div>

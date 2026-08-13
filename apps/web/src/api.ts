@@ -30,3 +30,10 @@ export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export function fileUrl(p: string): string {
   return `/api/files/${encodeURIComponent(p).replace(/%2F/g, "/")}`;
 }
+
+export function rawFileUrl(p: string): string {
+  const token = getToken();
+  const q = new URLSearchParams({ path: p });
+  if (token) q.set("token", token);
+  return `/api/files/raw?${q.toString()}`;
+}

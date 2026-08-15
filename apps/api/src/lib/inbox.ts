@@ -29,14 +29,15 @@ export async function registerAgent(name: string): Promise<Agent> {
   if (!clean) throw new Error("invalid name");
   const token = `ag_${nanoid(24)}`;
   await surrealQuery(
-    "DELETE agent WHERE name = $name; CREATE agent SET name = $name, token = $token, created_at = time::now()",
-    { name: clean, token },
+    // $token is a protected variable in SurrealDB 2.x — bind as $tok
+    "DELETE agent WHERE name = $name; CREATE agent SET name = $name, token = $tok, created_at = time::now()",
+    { name: clean, tok: token },
   );
   return { name: clean, token };
 }
 
 export async function findAgentByToken(token: string): Promise<Agent | null> {
-  const rows = (await surrealQuery("SELECT * FROM agent WHERE token = $token LIMIT 1", { token })) as unknown[][];
+  const rows = (await surrealQuery("SELECT * FROM agent WHERE token = $tok LIMIT 1", { tok: token })) as unknown[][];
   const hit = (rows?.[0] as Agent[] | undefined)?.[0];
   return hit || null;
 }

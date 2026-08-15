@@ -38,7 +38,7 @@ export type OpenTab = {
 };
 
 export type NoteMode = "edit" | "preview";
-export type MainView = "note" | "graph";
+export type MainView = "note" | "graph" | "surreal" | "inbox";
 
 export type LintReport = {
   orphans: string[];

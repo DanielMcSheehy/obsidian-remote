@@ -18,13 +18,13 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertTriangle, IconArrowBackUp, IconDiamond, IconFiles, IconGraph, IconLock, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowBackUp, IconDatabase, IconDiamond, IconFiles, IconGraph, IconInbox, IconLock, IconPaperclip, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { api, fileUrl } from "../api";
 import type { FileEntry, GraphPayload, LintReport, MainView, NoteMode, OpenTab } from "../types";
-import { buildTree, filterTree, flattenIds } from "../lib/tree";
+import { IMAGE_EXT, buildTree, filterTree, flattenIds } from "../lib/tree";
 import { describeOp, pushOp, type VaultOp } from "../lib/undo";
 import { wordCount } from "../lib/wikilinks";
 import { spring } from "../theme";
@@ -33,6 +33,9 @@ import { EditorPane } from "./EditorPane";
 import { CommandPalette } from "./CommandPalette";
 import { RightRail } from "./RightRail";
 import { StatusBar } from "./StatusBar";
+import { SurrealStudio } from "./SurrealStudio";
+import { InboxView } from "./InboxView";
+
 
 const GraphView = lazy(() => import("./GraphView"));
 
@@ -57,6 +60,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   const tabsRef = useRef<OpenTab[]>([]);
   const selectedRef = useRef<string | null>(null);
   const isResizing = useRef(false);
+  const filePick = useRef<HTMLInputElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tree = useMemo(() => buildTree(files), [files]);
   const filtered = useMemo(() => filterTree(tree, search), [tree, search]);
@@ -115,6 +119,14 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       setOpened(false);
       return;
     }
+    if (IMAGE_EXT.test(p)) {
+      setTabs((prev) => [...prev.filter((t) => t.path !== p), { path: p, content: "", saved: "", dirty: false }]);
+      setSelected(p);
+      setView("note");
+      setMode("preview");
+      setOpened(false);
+      return;
+    }
     try {
       const r = await api<{ content: string; path: string }>(`/api/files/content?path=${encodeURIComponent(p)}`);
       const path = r.path || p;
@@ -163,6 +175,23 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   async function createFile(e?: React.FormEvent) {
     e?.preventDefault();
     await createAt(newPath);
+  }
+
+  async function uploadAttachment(file: File) {
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+    try {
+      const dest = `raw/assets/${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const r = await api<{ embed: string }>("/api/files/upload", { method: "POST", body: JSON.stringify({ name: file.name, base64, path: dest }) });
+      notifications.show({ title: "Attached", message: r.embed, color: "violet" });
+      await refreshFiles();
+    } catch (e) {
+      notifications.show({ title: "Upload failed", message: String(e), color: "red" });
+    }
   }
 
   async function snapshot(p: string): Promise<Array<{ path: string; content: string }>> {
@@ -377,6 +406,19 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                 Search
               </Button>
             </Tooltip>
+            <ActionIcon variant="subtle" color="gray" title="Attach file" onClick={() => filePick.current?.click()}>
+              <IconPaperclip size={16} />
+            </ActionIcon>
+            <input
+              ref={filePick}
+              type="file"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void uploadAttachment(f);
+              }}
+            />
             <Button
               variant={view === "graph" ? "gradient" : "light"}
               gradient={{ from: "violet", to: "pink" }}
@@ -385,7 +427,13 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
               leftSection={<IconGraph size={14} />}
               onClick={() => setView(view === "graph" ? "note" : "graph")}
             >
-              {view === "graph" ? "Editor" : "Graph"}
+              Graph
+            </Button>
+            <Button variant={view === "surreal" ? "light" : "subtle"} color="violet" size="xs" leftSection={<IconDatabase size={14} />} onClick={() => setView(view === "surreal" ? "note" : "surreal")}>
+              Surreal
+            </Button>
+            <Button variant={view === "inbox" ? "light" : "subtle"} color="violet" size="xs" leftSection={<IconInbox size={14} />} onClick={() => setView(view === "inbox" ? "note" : "inbox")}>
+              Inbox
             </Button>
             <ActionIcon variant="subtle" color="gray" onClick={() => setRail((r) => !r)} visibleFrom="md" title="Toggle outline">
               <IconFiles size={16} />
@@ -470,7 +518,15 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
 
       <AppShell.Main style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 84px)", minHeight: 0 }}>
         <AnimatePresence mode="wait">
-          {view === "graph" ? (
+          {view === "surreal" ? (
+            <motion.div key="surreal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, display: "flex", minHeight: 0 }}>
+              <SurrealStudio />
+            </motion.div>
+          ) : view === "inbox" ? (
+            <motion.div key="inbox" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, display: "flex", minHeight: 0 }}>
+              <InboxView />
+            </motion.div>
+          ) : view === "graph" ? (
             <motion.div key="graph" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, display: "flex", minHeight: 0 }}>
               <Suspense
                 fallback={

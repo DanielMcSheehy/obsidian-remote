@@ -16,10 +16,16 @@ services:
       - APP_PASSWORD=${APP_PASSWORD:-}
       - VAULT_NAME=${VAULT_NAME:-obsidian}
       - DATA_DIR=/data
+      - SURREAL_URL=http://surreal:8000
+      - SURREAL_USER=root
+      - SURREAL_PASSWORD=obsidian-remote-internal-do-not-expose
+      - SURREAL_NS=vault
+      - SURREAL_DB=memory
     volumes:
       - app_data:/data
     depends_on:
       - couchdb
+      - surreal
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/healthz"]
       interval: 10s
@@ -44,6 +50,17 @@ services:
       retries: 15
       start_period: 40s
 
+  surreal:
+    image: surrealdb/surrealdb:v2
+    restart: unless-stopped
+    command: start --log info --user root --pass obsidian-remote-internal-do-not-expose --bind 0.0.0.0:8000 rocksdb:/data
+    expose:
+      - "8000"
+    volumes:
+      - surreal_data:/data
+    user: "0:0"
+
 volumes:
   app_data:
   couch_data:
+  surreal_data:

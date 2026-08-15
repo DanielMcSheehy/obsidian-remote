@@ -49,6 +49,11 @@ export const config = {
   defaultVault: env("VAULT_NAME", "obsidian").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 32) || "obsidian",
   publicUrl: env("PUBLIC_URL", "") || env("SERVICE_FQDN_APP", "") || `http://localhost:${env("PORT", "3000")}`,
   nodeEnv: env("NODE_ENV", "production"),
+  surrealUrl: env("SURREAL_URL", "http://surreal:8000"),
+  surrealUser: env("SURREAL_USER", "root"),
+  surrealPassword: env("SURREAL_PASSWORD", HARDCODED_COUCH_PASS),
+  surrealNs: env("SURREAL_NS", "vault"),
+  surrealDb: env("SURREAL_DB", "memory"),
 };
 
 export function couchAdminAuthHeader(): string {

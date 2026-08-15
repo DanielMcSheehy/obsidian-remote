@@ -6,7 +6,6 @@ export const stagger = 0.02;
 export const theme = createTheme({
   primaryColor: "violet",
   primaryShade: 6,
-  defaultRadius: "md",
   colors: {
     violet: [
       "#f5f0ff",
@@ -23,6 +22,7 @@ export const theme = createTheme({
   },
   fontFamily: "Outfit, Inter, system-ui, sans-serif",
   headings: { fontFamily: "Outfit, Inter, system-ui, sans-serif", fontWeight: "600" },
+  defaultRadius: "sm",
   components: {
     Tooltip: { defaultProps: { withArrow: true, openDelay: 280 } },
     Notification: { defaultProps: { radius: "md" } },

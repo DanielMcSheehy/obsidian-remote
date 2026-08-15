@@ -9,9 +9,13 @@ import { config } from "./lib/config.js";
 import { ensureCouchUp } from "./lib/couch.js";
 import { authRoutes } from "./routes/auth.js";
 import { ensureDefaultVault, vaultRoutes } from "./routes/vaults.js";
-import { filesRoutes, ensureVault, vaultRoot } from "./routes/files.js";
+import { filesRoutes, ensureVault, vaultRoot, collectGraph } from "./routes/files.js";
 import { wikiRoutes } from "./routes/wiki.js";
 import { ensureWikiLayout } from "./lib/wiki.js";
+import { surrealRoutes } from "./routes/surreal.js";
+import { inboxRoutes } from "./routes/inbox.js";
+import { mcpRoutes } from "./routes/mcp.js";
+import { ensureSurreal, syncWikiGraph } from "./lib/surreal.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function build() {
@@ -33,8 +37,8 @@ async function build() {
 
   // health — unauthenticated, required for Coolify rollout gate
   app.get("/healthz", async () => ({ status: "ok", uptime: process.uptime(), timestamp: Date.now() }));
-  app.get("/api/health", async () => ({ status: "ok", couchUrl: config.couchUrl, publicUrl: config.publicUrl, hasPassword: !!config.appPassword, defaultVault: config.defaultVault }));
-  app.get("/api/config", async () => ({ publicUrl: config.publicUrl, couchPrefix: "/couch", defaultVault: config.defaultVault, hasPassword: !!config.appPassword, wiki: true }));
+  app.get("/api/health", async () => ({ status: "ok", couchUrl: config.couchUrl, publicUrl: config.publicUrl, hasPassword: !!config.appPassword, defaultVault: config.defaultVault, surrealUrl: config.surrealUrl }));
+  app.get("/api/config", async () => ({ publicUrl: config.publicUrl, couchPrefix: "/couch", defaultVault: config.defaultVault, hasPassword: !!config.appPassword, wiki: true, mcp: "/mcp", surreal: true, inbox: true }));
   app.get("/llms.txt", async (_req, reply) => {
     const body = [
       "# Obsidian Remote",
@@ -49,6 +53,10 @@ async function build() {
       "Lint: GET /api/lint",
       "Write: PUT /api/files/wiki/Page.md  {\"content\":\"...\"}",
       "Log: POST /api/log  {\"kind\":\"ingest\",\"title\":\"...\"}",
+      "MCP: POST /mcp  (JSON-RPC, Bearer APP_PASSWORD)",
+      "Inbox: POST /api/agents/register  then GET /api/inbox with agent token",
+      "Surreal: POST /api/surreal/query  {\"sql\":\"...\"}",
+      "Upload: POST /api/files/upload  {\"name\",\"base64\",\"path?\"}",
       "",
       "raw/ is immutable. wiki/ is yours. Read index.md first.",
       "",
@@ -60,6 +68,9 @@ async function build() {
   await vaultRoutes(app);
   await filesRoutes(app);
   await wikiRoutes(app);
+  await surrealRoutes(app);
+  await inboxRoutes(app);
+  await mcpRoutes(app);
   // CouchDB proxy — forwards whatever Basic/AuthSession LiveSync sends directly to Couch.
   // Couch itself is NOT exposed externally — only via this proxy on the internal docker network.
   await app.register(httpProxy, {
@@ -82,7 +93,7 @@ async function build() {
     app.log.info({ publicDir }, "serving frontend");
     await app.register(fastifyStatic, { root: publicDir, prefix: "/", wildcard: false, decorateReply: true });
     app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith("/api/") || req.url.startsWith("/couch/") || req.url.startsWith("/healthz") || req.url.startsWith("/llms.txt")) {
+      if (req.url.startsWith("/api/") || req.url.startsWith("/couch/") || req.url.startsWith("/healthz") || req.url.startsWith("/llms.txt") || req.url.startsWith("/mcp")) {
         return reply.code(404).send({ error: "not found" });
       }
       if (req.method !== "GET") return reply.code(404).send({ error: "not found" });
@@ -108,6 +119,20 @@ ensureCouchUp(60)
     await ensureDefaultVault(app);
   })
   .catch((e) => app.log.warn(e, "couchdb not reachable yet"));
+
+ensureSurreal()
+  .then((ok) => {
+    app.log.info({ ok }, ok ? "surreal ready" : "surreal not reachable yet");
+    if (ok) {
+      try {
+        const g = collectGraph();
+        void syncWikiGraph(g.nodes, g.edges);
+      } catch {
+        /* optional */
+      }
+    }
+  })
+  .catch((e) => app.log.warn(e, "surreal not reachable yet"));
 
 await app.listen({ port: config.port, host: config.host });
 app.log.info(`obsidian-remote listening on ${config.host}:${config.port} publicUrl=${config.publicUrl} defaultVault=${config.defaultVault} auth=${config.appPassword ? "password-set" : "open"} vault:${vaultRoot()}`);

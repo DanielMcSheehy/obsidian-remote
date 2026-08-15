@@ -5,7 +5,7 @@ import { IconDeviceFloppy, IconExternalLink, IconEye, IconPencil, IconX } from "
 import { AnimatePresence, motion } from "framer-motion";
 import type { FileEntry, NoteMode, OpenTab } from "../types";
 import { rawFileUrl } from "../api";
-import { noteExists, resolveNote } from "../lib/tree";
+import { IMAGE_EXT, noteExists, resolveNote } from "../lib/tree";
 import { fuzzy, slugify, stripFrontmatter, vaultToMarkdown, wikilinkQueryBeforeCursor } from "../lib/wikilinks";
 import { spring } from "../theme";
 import { CodeBlock } from "./CodeBlock";
@@ -122,7 +122,11 @@ export function EditorPane({
       </Box>
       <Box style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex" }}>
         <AnimatePresence mode="wait">
-          {mode === "edit" ? (
+          {IMAGE_EXT.test(active.path) ? (
+            <motion.div key="img" className="preview-stage" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ padding: 24 }}>
+              <img src={rawFileUrl(active.path)} alt={active.path} style={{ maxWidth: "100%", borderRadius: 12 }} />
+            </motion.div>
+          ) : mode === "edit" ? (
             <motion.div key="edit" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring} style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               <FormatBar
                 value={active.content}

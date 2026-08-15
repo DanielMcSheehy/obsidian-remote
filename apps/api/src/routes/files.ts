@@ -196,6 +196,30 @@ export async function filesRoutes(app: FastifyInstance) {
     return reply.type(types[ext] || "application/octet-stream").send(buf);
   });
 
+  // POST /api/files/upload { path?, name, base64 } — binary attachments on disk
+  app.post("/api/files/upload", async (req, reply) => {
+    const body = (req.body as { path?: string; name?: string; base64?: string }) ?? {};
+    if (!body.base64) return reply.code(400).send({ error: "base64 required" });
+    const name = (body.name || "file.bin").replace(/[^a-zA-Z0-9._-]/g, "_");
+    let p = (body.path || `raw/assets/${name}`).replace(/^\/+/, "");
+    if (!p.includes(".")) p = `${p}${path.posix.extname(name)}`;
+    if (isRawPath(p) && !p.startsWith("raw/assets/") && !wantsForce(req.query, req.headers as Record<string, unknown>)) {
+      return reply.code(403).send({ error: "protected", hint: "use raw/assets/… or ?force=1" });
+    }
+    let full: string;
+    try {
+      full = safePath(p);
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    const b64 = body.base64.replace(/^data:[^;]+;base64,/, "");
+    const buf = Buffer.from(b64, "base64");
+    if (buf.length > 20 * 1024 * 1024) return reply.code(413).send({ error: "max 20MB" });
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, buf);
+    return { ok: true, path: p, size: buf.length, embed: `![[${p}]]` };
+  });
+
   // PUT /api/files/:path -> create/update
   app.put("/api/files/*", async (req, reply) => {
     const raw = (req.params as { "*": string })["*"] || "";

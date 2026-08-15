@@ -62,6 +62,44 @@ curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/jso
 
 `raw/` and `log.md` reject PUT/DELETE unless `?force=1`.
 
+## Attachments
+
+```bash
+# JSON: {name, base64 data-url, path?}  → stored on disk, default raw/assets/
+curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/json" \
+  -d '{"name":"shot.png","base64":"data:image/png;base64,...","path":"raw/assets/shot.png"}' \
+  https://obsidian.swarmlaboratory.com/api/files/upload
+# embed with ![[raw/assets/shot.png]]
+curl -H "Authorization: Bearer strong" \
+  "https://obsidian.swarmlaboratory.com/api/files/raw?path=raw/assets/shot.png&token=strong"
+```
+
+## MCP
+
+`POST https://obsidian.swarmlaboratory.com/mcp` JSON-RPC (`initialize`, `tools/list`, `tools/call`). Bearer `APP_PASSWORD`.
+
+## Agent inbox (no LLM)
+
+```bash
+curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/json" \
+  -d '{"name":"research"}' https://obsidian.swarmlaboratory.com/api/agents/register
+# → {agent:{name,token}}
+curl -H "Authorization: Bearer <agent-token>" https://obsidian.swarmlaboratory.com/api/inbox
+curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/json" \
+  -d '{"to":"research","subject":"hi","body":"ping"}' \
+  https://obsidian.swarmlaboratory.com/api/inbox
+```
+
+## Surreal (file-backed, internal)
+
+Couch stays for LiveSync. Surreal holds graph copies + inbox.
+
+```bash
+curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/json" \
+  -d '{"sql":"SELECT * FROM wiki_node LIMIT 10"}' \
+  https://obsidian.swarmlaboratory.com/api/surreal/query
+```
+
 ## Health
 
 ```bash

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Center, MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { motion } from "framer-motion";
-import { api, clearToken, getToken, setToken } from "./api";
+import { api, clearToken, ensureViewCookie, getToken, setToken } from "./api";
 import { theme } from "./theme";
 import { AuthScreen } from "./components/AuthScreen";
 import { VaultShell } from "./components/VaultShell";
@@ -36,8 +36,12 @@ function AppInner() {
 
   useEffect(() => {
     if (!getToken()) return;
+    ensureViewCookie();
     api<{ ok: boolean }>("/api/auth/me")
-      .then(() => setAuthed(true))
+      .then(() => {
+        ensureViewCookie();
+        setAuthed(true);
+      })
       .catch(() => {
         clearToken();
         setAuthed(false);

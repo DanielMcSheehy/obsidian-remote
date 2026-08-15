@@ -4,7 +4,7 @@ import { notifications } from "@mantine/notifications";
 import { api } from "../api";
 import { threadKey } from "../lib/surrealql";
 
-type Agent = { name: string };
+type Agent = { name: string; created_at?: string };
 type Mail = {
   id: string;
   to: string;

@@ -201,7 +201,8 @@ export async function filesRoutes(app: FastifyInstance) {
     const body = (req.body as { path?: string; name?: string; base64?: string }) ?? {};
     if (!body.base64) return reply.code(400).send({ error: "base64 required" });
     const name = (body.name || "file.bin").replace(/[^a-zA-Z0-9._-]/g, "_");
-    let p = (body.path || `raw/assets/${name}`).replace(/^\/+/, "");
+    const site = /\.(html?|css|js|mjs)$/i.test(name);
+    let p = (body.path || (site ? `html/${name}` : `raw/assets/${name}`)).replace(/^\/+/, "");
     if (!p.includes(".")) p = `${p}${path.posix.extname(name)}`;
     if (isRawPath(p) && !p.startsWith("raw/assets/") && !wantsForce(req.query, req.headers as Record<string, unknown>)) {
       return reply.code(403).send({ error: "protected", hint: "use raw/assets/… or ?force=1" });

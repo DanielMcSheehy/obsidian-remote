@@ -79,3 +79,9 @@ export function noteExists(files: FileEntry[], href: string): boolean {
 }
 
 export const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
+export const HTML_EXT = /\.html?$/i;
+export const SITE_SRC = /\.(css|js|mjs|json)$/i;
+
+export function isMarkdownPath(p: string): boolean {
+  return !IMAGE_EXT.test(p) && !HTML_EXT.test(p) && !SITE_SRC.test(p);
+}

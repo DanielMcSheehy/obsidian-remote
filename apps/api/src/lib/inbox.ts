@@ -43,7 +43,10 @@ export async function findAgentByToken(token: string): Promise<Agent | null> {
 
 export async function listAgents(): Promise<Array<{ name: string; created_at?: string }>> {
   const rows = (await surrealQuery("SELECT name, created_at FROM agent")) as unknown[][];
-  return ((rows?.[0] as Agent[]) || []).map((a) => ({ name: a.name, created_at: String(a.created_at || "") }));
+  return ((rows?.[0] as Agent[]) || [])
+    .filter((a) => a?.name)
+    .map((a) => ({ name: a.name, created_at: a.created_at ? String(a.created_at) : undefined }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function sendMail(msg: { to: string; from: string; subject: string; body: string; thread?: string }): Promise<Mail> {

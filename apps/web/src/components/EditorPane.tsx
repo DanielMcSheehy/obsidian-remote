@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ActionIcon, Badge, Box, Button, Group, Tabs, Text, UnstyledButton } from "@mantine/core";
 import { IconDeviceFloppy, IconExternalLink, IconEye, IconPencil, IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { FileEntry, NoteMode, OpenTab } from "../types";
-import { rawFileUrl } from "../api";
-import { IMAGE_EXT, noteExists, resolveNote } from "../lib/tree";
+import { rawFileUrl, viewFileUrl } from "../api";
+import { HTML_EXT, IMAGE_EXT, SITE_SRC, isMarkdownPath, noteExists, resolveNote } from "../lib/tree";
 import { fuzzy, slugify, stripFrontmatter, vaultToMarkdown, wikilinkQueryBeforeCursor } from "../lib/wikilinks";
 import { spring } from "../theme";
 import { CodeBlock } from "./CodeBlock";
@@ -104,13 +105,28 @@ export function EditorPane({
             )}
           </Group>
           <Group gap={6} wrap="nowrap">
+            {HTML_EXT.test(active.path) && (
+              <Button
+                component="a"
+                href={viewFileUrl(active.path)}
+                target="_blank"
+                rel="noreferrer"
+                size="xs"
+                radius="md"
+                variant="subtle"
+                color="violet"
+                leftSection={<IconExternalLink size={12} />}
+              >
+                Open live
+              </Button>
+            )}
             <Tabs value={mode} onChange={(v) => onMode((v as NoteMode) || "edit")} variant="pills" radius="md" color="violet">
               <Tabs.List style={{ background: "rgba(15,15,16,0.55)", borderRadius: 8, padding: 2, boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                 <Tabs.Tab value="edit" leftSection={<IconPencil size={12} />}>
                   Edit
                 </Tabs.Tab>
                 <Tabs.Tab value="preview" leftSection={<IconEye size={12} />}>
-                  Preview
+                  {HTML_EXT.test(active.path) ? "Live" : "Preview"}
                 </Tabs.Tab>
               </Tabs.List>
             </Tabs>
@@ -128,17 +144,19 @@ export function EditorPane({
             </motion.div>
           ) : mode === "edit" ? (
             <motion.div key="edit" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring} style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <FormatBar
-                value={active.content}
-                selection={sel}
-                focus={() => ta.current?.focus()}
-                onChange={(next, range) => {
-                  onChange(next);
-                  setSel(range);
-                  setCaret(range.end);
-                  requestAnimationFrame(() => ta.current?.setSelectionRange(range.start, range.end));
-                }}
-              />
+              {isMarkdownPath(active.path) && (
+                <FormatBar
+                  value={active.content}
+                  selection={sel}
+                  focus={() => ta.current?.focus()}
+                  onChange={(next, range) => {
+                    onChange(next);
+                    setSel(range);
+                    setCaret(range.end);
+                    requestAnimationFrame(() => ta.current?.setSelectionRange(range.start, range.end));
+                  }}
+                />
+              )}
               <textarea
                 ref={ta}
                 className="editor"
@@ -162,7 +180,13 @@ export function EditorPane({
                   const t = e.target as HTMLTextAreaElement;
                   setSel({ start: t.selectionStart, end: t.selectionEnd });
                 }}
-                placeholder={"# Hello\n\n[[link|label]] · [web](https://…) · ```js code```"}
+                placeholder={
+                  HTML_EXT.test(active.path)
+                    ? "<!DOCTYPE html>\n<html>\n  <head><link rel=\"stylesheet\" href=\"style.css\" /></head>\n  <body>\n    <script src=\"app.js\"></script>\n  </body>\n</html>"
+                    : SITE_SRC.test(active.path)
+                      ? "/* source */"
+                      : "# Hello\n\n[[link|label]] · [web](https://…) · ```js code```"
+                }
                 spellCheck={false}
               />
               <AnimatePresence>
@@ -186,10 +210,32 @@ export function EditorPane({
                 )}
               </AnimatePresence>
             </motion.div>
+          ) : HTML_EXT.test(active.path) ? (
+            <motion.div key="html" className="html-stage" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={spring}>
+              {active.dirty && (
+                <div className="html-preview-banner">Unsaved — linked CSS/JS load from disk after Save. Inline script still runs below.</div>
+              )}
+              <iframe
+                key={active.dirty ? "draft" : `live:${active.saved}`}
+                className="html-frame"
+                title={active.path}
+                sandbox="allow-scripts allow-forms allow-popups allow-modals allow-pointer-lock allow-popups-to-escape-sandbox"
+                referrerPolicy="no-referrer"
+                src={active.dirty ? undefined : viewFileUrl(active.path)}
+                srcDoc={active.dirty ? active.content : undefined}
+              />
+            </motion.div>
+          ) : SITE_SRC.test(active.path) ? (
+            <motion.div key="src" className="preview-stage" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring} style={{ padding: 24 }}>
+              <Box className="glass md-preview" style={{ maxWidth: 920 }}>
+                <CodeBlock language={active.path.split(".").pop() || "text"}>{active.content || "/* empty */"}</CodeBlock>
+              </Box>
+            </motion.div>
           ) : (
             <motion.div key="preview" className="preview-stage" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={spring}>
               <Box className="glass md-preview">
                 <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
                   components={{
                     h1: ({ children }) => <h1 id={slugify(String(children))}>{children}</h1>,
                     h2: ({ children }) => <h2 id={slugify(String(children))}>{children}</h2>,

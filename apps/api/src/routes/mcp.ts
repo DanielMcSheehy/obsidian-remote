@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { config } from "../lib/config.js";
 import { searchVault, lintVault, appendLog } from "../lib/wiki.js";
 import { collectGraph } from "./files.js";
-import { listMail, sendMail, findAgentByToken } from "../lib/inbox.js";
+import { listAgents, listMail, sendMail, findAgentByToken } from "../lib/inbox.js";
 import { ensureSurreal, surrealQuery, surrealReady } from "../lib/surreal.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -36,6 +36,7 @@ const TOOLS = [
   { name: "vault_graph", description: "Wikilink graph", inputSchema: { type: "object", properties: {} } },
   { name: "vault_lint", description: "Orphans and dangling links", inputSchema: { type: "object", properties: {} } },
   { name: "vault_log", description: "Append to log.md", inputSchema: { type: "object", properties: { kind: { type: "string" }, title: { type: "string" }, detail: { type: "string" } }, required: ["title"] } },
+  { name: "agents_list", description: "List registered inbox agents (names only, no tokens)", inputSchema: { type: "object", properties: {} } },
   { name: "inbox_list", description: "List mail for an agent (admin)", inputSchema: { type: "object", properties: { agent: { type: "string" } }, required: ["agent"] } },
   { name: "inbox_send", description: "Send mail to a registered agent", inputSchema: { type: "object", properties: { to: { type: "string" }, subject: { type: "string" }, body: { type: "string" } }, required: ["to", "subject"] } },
   { name: "surreal_query", description: "Run SurrealQL (read-oriented)", inputSchema: { type: "object", properties: { sql: { type: "string" } }, required: ["sql"] } },
@@ -69,6 +70,9 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
       return lintVault(collectGraph());
     case "vault_log":
       return { line: appendLog(String(args.kind || "write"), String(args.title), String(args.detail || "")) };
+    case "agents_list":
+      if (!(await ensureSurreal())) throw new Error("surreal unavailable");
+      return { agents: await listAgents() };
     case "inbox_list":
       if (!(await ensureSurreal())) throw new Error("surreal unavailable");
       return { mail: await listMail(String(args.agent)) };

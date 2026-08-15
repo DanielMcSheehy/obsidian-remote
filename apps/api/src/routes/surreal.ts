@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requireAppPassword } from "../lib/auth.js";
-import { ensureSurreal, surrealQuery, surrealReady } from "../lib/surreal.js";
+import { describeSchema, ensureSurreal, surrealQuery, surrealReady } from "../lib/surreal.js";
 
 export async function surrealRoutes(app: FastifyInstance) {
   app.addHook("preHandler", async (req, reply) => {
@@ -10,6 +10,8 @@ export async function surrealRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/surreal/health", async () => ({ ok: await ensureSurreal() }));
+
+  app.get("/api/surreal/schema", async () => ({ tables: await describeSchema() }));
 
   app.post("/api/surreal/query", async (req, reply) => {
     if (!surrealReady() && !(await ensureSurreal())) return reply.code(503).send({ error: "surreal unavailable" });

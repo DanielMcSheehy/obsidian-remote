@@ -32,9 +32,11 @@ export async function inboxRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get("/api/agents", { preHandler: [requireAppPassword] }, async (req, reply) => {
+  app.get("/api/agents", async (req, reply) => {
     if (!(await ensureSurreal())) return reply.code(503).send({ error: "surreal unavailable" });
-    return { agents: await listAgents() };
+    const who = await asAgentOrAdmin(req);
+    if (!who.admin && !who.agent) return reply.code(401).send({ error: "unauthorized", hint: "Bearer APP_PASSWORD or a registered agent token" });
+    return { agents: await listAgents(), self: who.agent, admin: who.admin };
   });
 
   app.get("/api/inbox", async (req, reply) => {

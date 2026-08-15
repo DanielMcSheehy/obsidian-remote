@@ -66,6 +66,79 @@ export async function surrealQuery(sql: string, vars?: Record<string, unknown>):
   return db.query(sql, vars);
 }
 
+export type SchemaField = { name: string; type: string };
+export type SchemaIndex = { name: string; def?: string };
+export type SchemaTable = { name: string; fields: SchemaField[]; indexes?: SchemaIndex[] };
+
+export const FALLBACK_SCHEMA: SchemaTable[] = [
+  {
+    name: "agent",
+    fields: [{ name: "name", type: "string" }, { name: "token", type: "string" }, { name: "created_at", type: "datetime" }],
+    indexes: [{ name: "agent_name", def: "UNIQUE name" }],
+  },
+  {
+    name: "mail",
+    fields: [
+      { name: "to", type: "string" },
+      { name: "from", type: "string" },
+      { name: "subject", type: "string" },
+      { name: "body", type: "string" },
+      { name: "read", type: "bool" },
+      { name: "thread", type: "string" },
+      { name: "created_at", type: "datetime" },
+    ],
+  },
+  {
+    name: "wiki_node",
+    fields: [{ name: "path", type: "string" }, { name: "title", type: "string" }, { name: "updated_at", type: "datetime" }],
+    indexes: [{ name: "wiki_path", def: "UNIQUE path" }],
+  },
+  { name: "wiki_edge", fields: [{ name: "source", type: "string" }, { name: "target", type: "string" }] },
+];
+
+function unwrap(result: unknown): unknown {
+  let cur: unknown = result;
+  for (let i = 0; i < 4; i++) {
+    if (Array.isArray(cur) && cur.length === 1) cur = cur[0];
+    else break;
+  }
+  return cur;
+}
+
+export async function describeSchema(): Promise<SchemaTable[]> {
+  if (!ready) {
+    const ok = await Promise.race([ensureSurreal(), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 600))]);
+    if (!ok) return FALLBACK_SCHEMA;
+  }
+  try {
+    const raw = unwrap(await surrealQuery("INFO FOR DB"));
+    const tablesObj = (raw as { tables?: Record<string, string> })?.tables || {};
+    const names = Object.keys(tablesObj);
+    if (names.length === 0) return FALLBACK_SCHEMA;
+    const out: SchemaTable[] = [];
+    for (const name of names.sort()) {
+      const info = unwrap(await surrealQuery(`INFO FOR TABLE ${name}`)) as { fields?: Record<string, string>; indexes?: Record<string, string> };
+      const fields = Object.entries(info?.fields || {}).map(([fname, def]) => {
+        const type = String(def).match(/TYPE\s+([^\s]+)/i)?.[1] || String(def).slice(0, 40);
+        return { name: fname, type };
+      });
+      const indexes = Object.entries(info?.indexes || {}).map(([iname, def]) => ({
+        name: iname,
+        def: String(def).replace(/^DEFINE INDEX\s+\S+\s+ON\s+\S+\s+/i, "").slice(0, 80),
+      }));
+      const fallback = FALLBACK_SCHEMA.find((t) => t.name === name);
+      out.push({
+        name,
+        fields: fields.length ? fields : fallback?.fields || [],
+        indexes: indexes.length ? indexes : fallback?.indexes || [],
+      });
+    }
+    return out;
+  } catch {
+    return FALLBACK_SCHEMA;
+  }
+}
+
 export async function syncWikiGraph(nodes: Array<{ id: string; label: string }>, edges: Array<{ source: string; target: string }>): Promise<void> {
   if (!ready) return;
   try {

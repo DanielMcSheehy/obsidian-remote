@@ -10,6 +10,7 @@ import { ensureCouchUp } from "./lib/couch.js";
 import { authRoutes } from "./routes/auth.js";
 import { ensureDefaultVault, vaultRoutes } from "./routes/vaults.js";
 import { filesRoutes, ensureVault, vaultRoot, collectGraph } from "./routes/files.js";
+import { viewRoutes } from "./routes/view.js";
 import { wikiRoutes } from "./routes/wiki.js";
 import { ensureWikiLayout } from "./lib/wiki.js";
 import { surrealRoutes } from "./routes/surreal.js";
@@ -38,7 +39,7 @@ async function build() {
   // health — unauthenticated, required for Coolify rollout gate
   app.get("/healthz", async () => ({ status: "ok", uptime: process.uptime(), timestamp: Date.now() }));
   app.get("/api/health", async () => ({ status: "ok", couchUrl: config.couchUrl, publicUrl: config.publicUrl, hasPassword: !!config.appPassword, defaultVault: config.defaultVault, surrealUrl: config.surrealUrl }));
-  app.get("/api/config", async () => ({ publicUrl: config.publicUrl, couchPrefix: "/couch", defaultVault: config.defaultVault, hasPassword: !!config.appPassword, wiki: true, mcp: "/mcp", surreal: true, inbox: true }));
+  app.get("/api/config", async () => ({ publicUrl: config.publicUrl, couchPrefix: "/couch", defaultVault: config.defaultVault, hasPassword: !!config.appPassword, wiki: true, mcp: "/mcp", surreal: true, inbox: true, html: true, view: "/view" }));
   app.get("/llms.txt", async (_req, reply) => {
     const body = [
       "# Obsidian Remote",
@@ -54,11 +55,15 @@ async function build() {
       "Write: PUT /api/files/wiki/Page.md  {\"content\":\"...\"}",
       "Log: POST /api/log  {\"kind\":\"ingest\",\"title\":\"...\"}",
       "MCP: POST /mcp  (JSON-RPC, Bearer APP_PASSWORD)",
-      "Inbox: POST /api/agents/register  then GET /api/inbox with agent token",
+      "Inbox: POST /api/agents/register {name} → token",
+      "Agents: GET /api/agents  (APP_PASSWORD or agent token; names only)",
+      "Mail: GET/POST /api/inbox  then POST /api/inbox/read",
       "Surreal: POST /api/surreal/query  {\"sql\":\"...\"}",
       "Upload: POST /api/files/upload  {\"name\",\"base64\",\"path?\"}",
+      "HTML: PUT /api/files/html/page.html  {\"content\":\"<!DOCTYPE html>…\"}",
+      "View: GET /view/html/page.html  (cookie vault_view, Bearer, or ?token=)",
       "",
-      "raw/ is immutable. wiki/ is yours. Read index.md first.",
+      "raw/ is immutable. wiki/ is yours. html/ is live. Read index.md first.",
       "",
     ].join("\n");
     return reply.type("text/plain; charset=utf-8").send(body);
@@ -67,6 +72,7 @@ async function build() {
   await authRoutes(app);
   await vaultRoutes(app);
   await filesRoutes(app);
+  await viewRoutes(app);
   await wikiRoutes(app);
   await surrealRoutes(app);
   await inboxRoutes(app);
@@ -93,7 +99,7 @@ async function build() {
     app.log.info({ publicDir }, "serving frontend");
     await app.register(fastifyStatic, { root: publicDir, prefix: "/", wildcard: false, decorateReply: true });
     app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith("/api/") || req.url.startsWith("/couch/") || req.url.startsWith("/healthz") || req.url.startsWith("/llms.txt") || req.url.startsWith("/mcp")) {
+      if (req.url.startsWith("/api/") || req.url.startsWith("/couch/") || req.url.startsWith("/healthz") || req.url.startsWith("/llms.txt") || req.url.startsWith("/mcp") || req.url.startsWith("/view")) {
         return reply.code(404).send({ error: "not found" });
       }
       if (req.method !== "GET") return reply.code(404).send({ error: "not found" });

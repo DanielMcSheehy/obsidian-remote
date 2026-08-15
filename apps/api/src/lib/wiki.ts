@@ -12,6 +12,7 @@ This host **is** the vault. Markdown on \`/data/vault\`. You write files; the hu
 
 - \`raw/\` — immutable sources. Never PUT/DELETE unless the human sets \`?force=1\`.
 - \`wiki/\` — pages you own. Entity pages, concepts, comparisons, synthesis.
+- \`html/\` — live sites. Full HTML + CSS + JS. Preview at \`GET /view/html/…\`.
 - \`AGENTS.md\` — this file. Co-evolve conventions here.
 - \`index.md\` — catalog. Auto-rebuilt on every write. Read it first.
 - \`log.md\` — append-only timeline. Use \`POST /api/log\`, do not overwrite.
@@ -35,6 +36,7 @@ Those edges power \`GET /api/graph\` and \`GET /api/lint\`.
 - Every wiki claim that came from a source should link to it: \`[[raw/…]]\` or a markdown link.
 - Prefer updating an existing page over creating a near-duplicate.
 - New notes without a folder go under \`wiki/\`.
+- Live pages go under \`html/\` as \`.html\` / \`.css\` / \`.js\`. They render at \`/view/html/…\` (scripts run in a sandbox; relative assets resolve).
 `;
 
 const WELCOME = `# Welcome
@@ -43,11 +45,76 @@ This vault follows the **Karpathy LLM wiki** pattern.
 
 - \`wiki/\` — compiled pages (you read these)
 - \`raw/\` — source documents (do not edit)
+- \`html/\` — live HTML/CSS/JS (preview in the vault, or open \`/view/html/…\`)
 - \`index.md\` — catalog; agents read this first
 - \`log.md\` — what happened
 - \`AGENTS.md\` — how agents must behave
 
 Create \`wiki/path/to/note\`, link with \`[[wiki/Welcome|a label]]\`, ask an agent to ingest into \`raw/\`.
+Drop a full page in \`html/hello/index.html\` with \`style.css\` + \`app.js\` beside it.
+`;
+
+const HELLO_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hello from the vault</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <p class="eyebrow">html/hello</p>
+    <h1>Live HTML</h1>
+    <p>This page is a real file. Scripts and CSS next to it load through <code>/view/html/hello/</code>.</p>
+    <button id="go" type="button">click me</button>
+    <p id="out"></p>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
+`;
+
+const HELLO_CSS = `:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-family: Outfit, Inter, system-ui, sans-serif;
+  background:
+    radial-gradient(ellipse 70% 50% at 10% -10%, rgba(139, 92, 246, 0.4), transparent 58%),
+    #0c0a14;
+  color: #f4eefc;
+}
+main { max-width: 28rem; padding: 2rem; }
+.eyebrow {
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  color: #c4b5fd;
+}
+h1 { font-weight: 650; letter-spacing: -0.04em; margin: 0.2em 0 0.4em; }
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.65rem 1.2rem;
+  font: inherit;
+  color: #0c0a14;
+  background: linear-gradient(120deg, #a78bfa, #f472b6);
+  cursor: pointer;
+}
+#out { min-height: 1.4em; color: #c4b5fd; }
+`;
+
+const HELLO_JS = `const out = document.getElementById("out");
+const go = document.getElementById("go");
+let n = 0;
+go?.addEventListener("click", () => {
+  n += 1;
+  if (out) out.textContent = n === 1 ? "scripts run in this sandbox." : \`clicked \${n} times\`;
+});
 `;
 
 function root(): string {
@@ -84,7 +151,13 @@ export function wantsForce(q: unknown, headers: Record<string, unknown>): boolea
 
 export type MdFile = { path: string; content: string };
 
+const TEXT_EXT = /\.(md|html?|css|js|mjs|json|txt)$/i;
+
 export function listMarkdown(): MdFile[] {
+  return listTextFiles().filter((f) => f.path.endsWith(".md"));
+}
+
+export function listTextFiles(): MdFile[] {
   const out: MdFile[] = [];
   const walk = (dir: string, rel: string) => {
     if (!fs.existsSync(dir)) return;
@@ -93,13 +166,19 @@ export function listMarkdown(): MdFile[] {
       const r = rel ? `${rel}/${e.name}` : e.name;
       const f = path.join(dir, e.name);
       if (e.isDirectory()) walk(f, r);
-      else if (e.isFile() && e.name.endsWith(".md")) {
+      else if (e.isFile() && TEXT_EXT.test(e.name)) {
         out.push({ path: r, content: fs.readFileSync(f, "utf8") });
       }
     }
   };
   walk(root(), "");
   return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export function listHtmlPages(): { path: string }[] {
+  return listTextFiles()
+    .filter((f) => /\.html?$/i.test(f.path))
+    .map((f) => ({ path: f.path }));
 }
 
 function oneLiner(content: string): string {
@@ -112,12 +191,17 @@ function oneLiner(content: string): string {
 
 export function buildIndexMarkdown(): string {
   const files = listMarkdown().filter((f) => f.path !== "index.md");
-  const groups: Record<string, MdFile[]> = { wiki: [], raw: [], schema: [], other: [] };
+  const groups: Record<string, MdFile[]> = { wiki: [], raw: [], html: [], schema: [], other: [] };
   for (const f of files) {
     if (f.path.startsWith("wiki/")) groups.wiki.push(f);
     else if (f.path.startsWith("raw/")) groups.raw.push(f);
+    else if (f.path.startsWith("html/")) groups.html.push(f);
     else if (f.path === "AGENTS.md" || f.path === "log.md") groups.schema.push(f);
     else groups.other.push(f);
+  }
+  for (const page of listHtmlPages()) {
+    if (groups.html.some((f) => f.path === page.path)) continue;
+    groups.html.push({ path: page.path, content: "" });
   }
   const section = (title: string, rows: MdFile[]) => {
     const lines = [`## ${title}`, ""];
@@ -139,6 +223,7 @@ export function buildIndexMarkdown(): string {
     "",
     section("wiki", groups.wiki),
     section("raw", groups.raw),
+    section("html", groups.html),
     section("schema", groups.schema),
     section("other", groups.other),
   ].join("\n");
@@ -162,6 +247,7 @@ export function ensureWikiLayout(): { seeded: boolean; created: string[] } {
   root();
   fs.mkdirSync(full("raw"), { recursive: true });
   fs.mkdirSync(full("wiki"), { recursive: true });
+  fs.mkdirSync(full("html"), { recursive: true });
   const created: string[] = [];
   if (writeIfMissing("AGENTS.md", AGENTS_MD)) created.push("AGENTS.md");
   if (writeIfMissing("log.md", "# Log\n\n")) created.push("log.md");
@@ -171,6 +257,15 @@ export function ensureWikiLayout(): { seeded: boolean; created: string[] } {
     created.push("wiki/Welcome.md");
     seeded = true;
     appendLog("seed", "Welcome", "wiki/Welcome.md");
+  }
+  if (listHtmlPages().length === 0) {
+    if (writeIfMissing("html/hello/index.html", HELLO_HTML)) created.push("html/hello/index.html");
+    if (writeIfMissing("html/hello/style.css", HELLO_CSS)) created.push("html/hello/style.css");
+    if (writeIfMissing("html/hello/app.js", HELLO_JS)) created.push("html/hello/app.js");
+    if (created.some((c) => c.startsWith("html/hello/"))) {
+      seeded = true;
+      appendLog("seed", "html/hello", "live HTML sandbox at /view/html/hello/");
+    }
   }
   rebuildIndex();
   if (!created.includes("index.md") && !fs.existsSync(full("index.md"))) created.push("index.md");
@@ -183,7 +278,7 @@ export function searchVault(q: string, limit = 30): SearchHit[] {
   const needle = q.trim().toLowerCase();
   if (!needle) return [];
   const hits: SearchHit[] = [];
-  for (const f of listMarkdown()) {
+  for (const f of listTextFiles()) {
     if (f.path.toLowerCase().includes(needle)) {
       hits.push({ path: f.path, line: 0, text: f.path, score: 40 });
     }

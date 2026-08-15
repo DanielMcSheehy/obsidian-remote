@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { ActionIcon, Badge, Box, Group, Stack, Text, ThemeIcon, Collapse } from "@mantine/core";
-import { IconBook, IconChevronDown, IconChevronRight, IconFolder, IconFolderOpen, IconTrash } from "@tabler/icons-react";
+import { IconBook, IconChevronDown, IconChevronRight, IconCode, IconFolder, IconFolderOpen, IconPhoto, IconTrash } from "@tabler/icons-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
 import type { TreeNode } from "../types";
+import { HTML_EXT, IMAGE_EXT, SITE_SRC } from "../lib/tree";
 import { spring, stagger } from "../theme";
 
 export function SortableFile({
@@ -50,8 +51,8 @@ export function SortableFile({
         style={{ marginLeft: depth * 10 }}
       >
         <Group gap={8} wrap="nowrap" style={{ overflow: "hidden" }}>
-          <ThemeIcon size="xs" variant={active ? "gradient" : "light"} gradient={{ from: "violet", to: "pink" }} color={active ? "violet" : "gray"}>
-            <IconBook size={12} />
+          <ThemeIcon size="xs" variant={active ? "gradient" : "light"} gradient={{ from: "violet", to: "pink" }} color={active ? "violet" : IMAGE_EXT.test(node.path) ? "pink" : HTML_EXT.test(node.path) || SITE_SRC.test(node.path) ? "violet" : "gray"}>
+            {IMAGE_EXT.test(node.path) ? <IconPhoto size={12} /> : HTML_EXT.test(node.path) || SITE_SRC.test(node.path) ? <IconCode size={12} /> : <IconBook size={12} />}
           </ThemeIcon>
           <Text size="sm" truncate style={{ color: active ? "#fff" : "#d4cde4" }}>
             {node.name.replace(/\.md$/i, "")}

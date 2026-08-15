@@ -14,6 +14,7 @@ export function CommandPalette({
   onClose,
   onOpen,
   onNew,
+  onNewHtml,
   onGraph,
   onTogglePreview,
   onOpenIndex,
@@ -26,6 +27,7 @@ export function CommandPalette({
   onClose: () => void;
   onOpen: (p: string) => void;
   onNew: () => void;
+  onNewHtml?: () => void;
   onGraph: () => void;
   onTogglePreview: () => void;
   onOpenIndex?: () => void;
@@ -50,6 +52,7 @@ export function CommandPalette({
       .filter((a) => a.score > 0);
     const actions: Action[] = [
       { id: "new", label: "New note", hint: "create", icon: <IconPlus size={14} />, run: onNew, score: fuzzy(q, "new note create") || (q ? 0 : 1) },
+      { id: "new-html", label: "New HTML page", hint: "html/", icon: <IconPlus size={14} />, run: () => onNewHtml?.(), score: fuzzy(q, "new html page css js site") || (q ? 0 : 1) },
       { id: "graph", label: "Open graph", hint: "⌘G", icon: <IconGraph size={14} />, run: onGraph, score: fuzzy(q, "graph constellation") || (q ? 0 : 1) },
       { id: "preview", label: "Toggle edit / preview", hint: "view", icon: q ? <IconEye size={14} /> : <IconPencil size={14} />, run: onTogglePreview, score: fuzzy(q, "preview edit toggle") || (q ? 0 : 1) },
       { id: "index", label: "Open index.md", hint: "catalog", icon: <IconFileText size={14} />, run: () => onOpenIndex?.(), score: fuzzy(q, "index catalog wiki") || (q ? 0 : 1) },
@@ -58,7 +61,7 @@ export function CommandPalette({
       { id: "undo", label: "Undo last change", hint: "⌘Z", icon: <IconFileText size={14} />, run: () => onUndo?.(), score: fuzzy(q, "undo revert") || (q ? 0 : 1) },
     ].filter((a) => a.score > 0);
     return [...actions, ...notes].sort((a, b) => b.score - a.score).slice(0, 18);
-  }, [files, q, onOpen, onNew, onGraph, onTogglePreview, onOpenIndex, onOpenAgents, onOpenLog, onUndo]);
+  }, [files, q, onOpen, onNew, onNewHtml, onGraph, onTogglePreview, onOpenIndex, onOpenAgents, onOpenLog, onUndo]);
 
   useEffect(() => {
     if (open) {

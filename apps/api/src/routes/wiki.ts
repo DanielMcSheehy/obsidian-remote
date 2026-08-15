@@ -37,7 +37,7 @@ export async function wikiRoutes(app: FastifyInstance) {
 
   app.get("/api/agent", async () => ({
     pattern: "karpathy-llm-wiki",
-    layout: ["raw/", "wiki/", "AGENTS.md", "index.md", "log.md"],
+    layout: ["raw/", "wiki/", "html/", "AGENTS.md", "index.md", "log.md"],
     endpoints: {
       list: "GET /api/files",
       read: "GET /api/files/content?path=",
@@ -50,12 +50,17 @@ export async function wikiRoutes(app: FastifyInstance) {
       reindex: "POST /api/wiki/reindex",
       schema: "GET /api/files/content?path=AGENTS.md",
       index: "GET /api/files/content?path=index.md",
+      view: "GET /view/html/…",
+      agents: "GET /api/agents",
+      register: "POST /api/agents/register {name}",
+      inbox: "GET|POST /api/inbox",
     },
     rules: [
       "Read index.md first",
       "Never rewrite raw/ without ?force=1",
       "Append history via POST /api/log",
       "Wikilink with [[wiki/Page]] so the graph stays true",
+      "Put live HTML/CSS/JS under html/ and open /view/html/…",
     ],
   }));
 }

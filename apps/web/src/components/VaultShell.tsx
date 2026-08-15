@@ -22,9 +22,9 @@ import { IconAlertTriangle, IconArrowBackUp, IconDatabase, IconDiamond, IconFile
 import { AnimatePresence, motion } from "framer-motion";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { api, fileUrl } from "../api";
+import { api, ensureViewCookie, fileUrl } from "../api";
 import type { FileEntry, GraphPayload, LintReport, MainView, NoteMode, OpenTab } from "../types";
-import { IMAGE_EXT, buildTree, filterTree, flattenIds } from "../lib/tree";
+import { HTML_EXT, IMAGE_EXT, SITE_SRC, buildTree, filterTree, flattenIds, isMarkdownPath } from "../lib/tree";
 import { describeOp, pushOp, type VaultOp } from "../lib/undo";
 import { wordCount } from "../lib/wikilinks";
 import { spring } from "../theme";
@@ -84,29 +84,34 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       const r = await api<{ files: FileEntry[]; vault?: string }>("/api/files");
       setFiles(r.files);
       if (r.vault) setVaultPath(r.vault);
-      try {
-        const c = await api<{ files: Array<{ id: string }> }>("/api/vault/files");
-        setCouchCount(c.files.length);
-      } catch {
-        /* couch optional */
-      }
-      try {
-        const g = await api<GraphPayload>("/api/graph");
-        setEdges(g.edges);
-      } catch {
-        /* graph optional */
-      }
-      try {
-        setLint(await api<LintReport>("/api/lint"));
-      } catch {
-        /* lint optional */
-      }
     } catch {
       /* ignore */
+    }
+    void refreshMeta();
+  }
+
+  async function refreshMeta() {
+    try {
+      const c = await api<{ files: Array<{ id: string }> }>("/api/vault/files");
+      setCouchCount(c.files.length);
+    } catch {
+      /* couch optional */
+    }
+    try {
+      const g = await api<GraphPayload>("/api/graph");
+      setEdges(g.edges);
+    } catch {
+      /* graph optional */
+    }
+    try {
+      setLint(await api<LintReport>("/api/lint"));
+    } catch {
+      /* lint optional */
     }
   }
 
   useEffect(() => {
+    ensureViewCookie();
     refreshFiles();
   }, []);
 
@@ -157,10 +162,15 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   async function createAt(raw: string) {
     const p = raw.trim().replace(/^\/+/, "");
     if (!p) return;
-    const nested = p.includes("/") ? p : `wiki/${p}`;
-    const finalPath = nested.endsWith(".md") ? nested : `${nested}.md`;
-    const title = finalPath.replace(/\.md$/, "").split("/").pop() || "note";
-    const seed = `# ${title}\n\n`;
+    const site = /\.(html?|css|js|mjs)$/i.test(p);
+    const nested = p.includes("/") ? p : site ? `html/${p}` : `wiki/${p}`;
+    const finalPath = site || nested.endsWith(".md") ? nested : `${nested}.md`;
+    const title = finalPath.replace(/\.(md|html?|css|js|mjs)$/i, "").split("/").pop() || "note";
+    const seed = HTML_EXT.test(finalPath)
+      ? `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="utf-8" />\n  <title>${title}</title>\n  <style>\n    :root { color-scheme: dark; }\n    body { font-family: system-ui, sans-serif; margin: 2rem; background: #0c0a14; color: #f4eefc; }\n  </style>\n</head>\n<body>\n  <h1>${title}</h1>\n  <p>Linked CSS/JS in this folder load after you save.</p>\n  <script>console.log(${JSON.stringify(title)});</script>\n</body>\n</html>\n`
+      : SITE_SRC.test(finalPath)
+        ? `/* ${title} */\n`
+        : `# ${title}\n\n`;
     try {
       await api(fileUrl(finalPath), { method: "PUT", body: JSON.stringify({ content: seed }) });
       record({ kind: "create", path: finalPath, after: seed });
@@ -185,7 +195,8 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
       r.readAsDataURL(file);
     });
     try {
-      const dest = `raw/assets/${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const dest = /\.(html?|css|js|mjs)$/i.test(safe) ? `html/${safe}` : `raw/assets/${safe}`;
       const r = await api<{ embed: string }>("/api/files/upload", { method: "POST", body: JSON.stringify({ name: file.name, base64, path: dest }) });
       notifications.show({ title: "Attached", message: r.embed, color: "violet" });
       await refreshFiles();
@@ -450,7 +461,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
           <form onSubmit={createFile}>
             <Group gap={6}>
               <TextInput
-                placeholder="new note → wiki/name"
+                placeholder="wiki/name or html/page.html"
                 value={newPath}
                 onChange={(e) => setNewPath(e.target.value)}
                 size="xs"
@@ -502,7 +513,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
           <Text size="xs" c="dimmed">
             Vault <Text span ff="monospace" c="violet">{vaultPath}</Text>
             <br />
-            wiki/ compiled · raw/ sources · drag to move
+            wiki/ notes · raw/ sources · html/ live pages
           </Text>
         </Box>
       </AppShell.Navbar>
@@ -552,7 +563,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                 onOpen={openFile}
                 onMode={setMode}
               />
-              {rail && (
+              {rail && isMarkdownPath(active.path) && (
                 <RightRail
                   content={active.content}
                   path={active.path}
@@ -600,6 +611,11 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
         onNew={() => {
           setPalette(false);
           const name = window.prompt("New note path", "wiki/untitled");
+          if (name) void createAt(name);
+        }}
+        onNewHtml={() => {
+          setPalette(false);
+          const name = window.prompt("HTML path", "html/untitled.html");
           if (name) void createAt(name);
         }}
         onGraph={() => setView("graph")}

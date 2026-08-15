@@ -1,5 +1,5 @@
 import { ActionIcon, Group, Tooltip } from "@mantine/core";
-import { IconBold, IconCode, IconItalic, IconLink, IconPhoto, IconQuote, IconBracketsContain } from "@tabler/icons-react";
+import { IconBold, IconCode, IconItalic, IconLink, IconPhoto, IconQuote, IconBracketsContain, IconTable } from "@tabler/icons-react";
 
 export function FormatBar({
   value,
@@ -52,6 +52,13 @@ export function FormatBar({
     wrap("[", `](${url})`, "label");
   }
 
+  function table() {
+    const { start, end } = selection;
+    const snippet = `| Col A | Col B |\n|---|---|\n| ${value.slice(start, end) || "a"} | b |\n`;
+    const next = value.slice(0, start) + snippet + value.slice(end);
+    apply(next, start, start + snippet.length);
+  }
+
   function image() {
     const url = window.prompt("Image URL or vault path", "https://");
     if (!url) return;
@@ -75,6 +82,9 @@ export function FormatBar({
       </Tooltip>
       <Tooltip label="Code block">
         <ActionIcon size="sm" variant="subtle" color="gray" onClick={codeBlock}><IconCode size={14} /></ActionIcon>
+      </Tooltip>
+      <Tooltip label="Table">
+        <ActionIcon size="sm" variant="subtle" color="gray" onClick={table}><IconTable size={14} /></ActionIcon>
       </Tooltip>
       <Tooltip label="Wikilink [[note|label]]">
         <ActionIcon size="sm" variant="subtle" color="violet" onClick={() => wrap("[[", "]]", "note")}><IconBracketsContain size={14} /></ActionIcon>

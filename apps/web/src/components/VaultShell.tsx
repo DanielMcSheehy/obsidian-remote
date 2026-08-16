@@ -18,17 +18,16 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertTriangle, IconArrowBackUp, IconDatabase, IconDiamond, IconFiles, IconGraph, IconInbox, IconLock, IconPaperclip, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowBackUp, IconDatabase, IconDiamond, IconFiles, IconFolderPlus, IconGraph, IconInbox, IconLock, IconPaperclip, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { DndContext, PointerSensor, pointerWithin, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { api, ensureViewCookie, fileUrl } from "../api";
 import type { FileEntry, GraphPayload, LintReport, MainView, NoteMode, OpenTab } from "../types";
-import { HTML_EXT, IMAGE_EXT, SITE_SRC, buildTree, filterTree, flattenIds, isMarkdownPath } from "../lib/tree";
+import { HTML_EXT, IMAGE_EXT, SITE_SRC, buildTree, filterTree, isMarkdownPath } from "../lib/tree";
 import { describeOp, pushOp, type VaultOp } from "../lib/undo";
 import { wordCount } from "../lib/wikilinks";
 import { spring } from "../theme";
-import { SortableFile } from "./FileTree";
+import { RootDrop, SortableFile } from "./FileTree";
 import { EditorPane } from "./EditorPane";
 import { CommandPalette } from "./CommandPalette";
 import { RightRail } from "./RightRail";
@@ -64,7 +63,6 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tree = useMemo(() => buildTree(files), [files]);
   const filtered = useMemo(() => filterTree(tree, search), [tree, search]);
-  const flatIds = useMemo(() => flattenIds(filtered), [filtered]);
   const active = tabs.find((t) => t.path === selected) || null;
   const counts = wordCount(active?.content || "");
   tabsRef.current = tabs;
@@ -184,7 +182,42 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
 
   async function createFile(e?: React.FormEvent) {
     e?.preventDefault();
+    if (newPath.trim().endsWith("/")) {
+      await createFolder(newPath);
+      return;
+    }
     await createAt(newPath);
+  }
+
+  async function createFolder(raw: string) {
+    const p = raw.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+    if (!p) return;
+    const nested = p.includes("/") ? p : `wiki/${p}`;
+    try {
+      const r = await api<{ path: string; existed?: boolean }>("/api/files/mkdir", { method: "POST", body: JSON.stringify({ path: nested }) });
+      if (!r.existed) record({ kind: "mkdir", path: r.path });
+      setNewPath("");
+      await refreshFiles();
+      notifications.show({ title: r.existed ? "Folder exists" : "Folder created", message: r.path, color: "violet" });
+    } catch (err) {
+      notifications.show({ title: "Folder failed", message: String(err), color: "red" });
+    }
+  }
+
+  function remapOpen(from: string, to: string) {
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.path === from) return { ...t, path: to };
+        if (t.path.startsWith(`${from}/`)) return { ...t, path: `${to}${t.path.slice(from.length)}` };
+        return t;
+      }),
+    );
+    setSelected((cur) => {
+      if (!cur) return cur;
+      if (cur === from) return to;
+      if (cur.startsWith(`${from}/`)) return `${to}${cur.slice(from.length)}`;
+      return cur;
+    });
   }
 
   async function uploadAttachment(file: File) {
@@ -241,26 +274,31 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  function destDirFromOver(overId: string): string | null {
+    if (overId === "folder:" || overId === "__root__") return "";
+    if (overId.startsWith("folder:")) return overId.slice("folder:".length);
+    const hit = files.find((f) => f.path === overId);
+    if (hit?.type === "dir") return hit.path;
+    if (hit?.type === "file") return hit.path.includes("/") ? hit.path.slice(0, hit.path.lastIndexOf("/")) : "";
+    return null;
+  }
+
   async function handleDragEnd(event: DragEndEvent) {
     const { active: a, over } = event;
     if (!over || a.id === over.id) return;
     const activeId = String(a.id);
-    const overId = String(over.id);
-    const activeIsFile = files.some((f) => f.path === activeId && f.type === "file");
-    const overIsDir = files.some((f) => f.path === overId && f.type === "dir") || tree.some((n) => n.path === overId && n.type === "dir");
-    if (!activeIsFile || !overIsDir) return;
-    const fileName = activeId.split("/").pop()!;
-    const dest = overId ? `${overId}/${fileName}` : fileName;
-    if (dest === activeId) return;
+    const destDir = destDirFromOver(String(over.id));
+    if (destDir === null) return;
+    const name = activeId.split("/").pop() || activeId;
+    const dest = destDir ? `${destDir}/${name}` : name;
+    if (dest === activeId || dest.startsWith(`${activeId}/`)) return;
     try {
-      const r = await api<{ content: string }>(`/api/files/content?path=${encodeURIComponent(activeId)}`);
-      await api(fileUrl(dest), { method: "PUT", body: JSON.stringify({ content: r.content }) });
-      await api(fileUrl(activeId), { method: "DELETE" });
-      record({ kind: "move", from: activeId, to: dest, content: r.content });
-      setTabs((prev) => prev.map((t) => (t.path === activeId ? { ...t, path: dest } : t)));
-      if (selected === activeId) setSelected(dest);
-      refreshFiles();
-      notifications.show({ title: "Moved", message: `${activeId} → ${dest}`, color: "violet" });
+      const r = await api<{ to: string }>("/api/files/move", { method: "POST", body: JSON.stringify({ from: activeId, to: destDir || dest }) });
+      const to = r.to || dest;
+      record({ kind: "move", from: activeId, to });
+      remapOpen(activeId, to);
+      await refreshFiles();
+      notifications.show({ title: "Moved", message: `${activeId} → ${to}`, color: "violet" });
     } catch (err) {
       notifications.show({ title: "Move failed", message: String(err), color: "red" });
     }
@@ -292,11 +330,11 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
         for (const f of op.files) {
           await api(`${fileUrl(f.path)}?force=1`, { method: "PUT", body: JSON.stringify({ content: f.content }) });
         }
+      } else if (op.kind === "mkdir") {
+        await api(`${fileUrl(op.path)}?force=1`, { method: "DELETE" });
       } else if (op.kind === "move") {
-        await api(fileUrl(op.from), { method: "PUT", body: JSON.stringify({ content: op.content }) });
-        await api(fileUrl(op.to), { method: "DELETE" });
-        setTabs((prev) => prev.map((t) => (t.path === op.to ? { ...t, path: op.from } : t)));
-        if (selectedRef.current === op.to) setSelected(op.from);
+        await api("/api/files/move", { method: "POST", body: JSON.stringify({ from: op.to, to: op.from }) });
+        remapOpen(op.to, op.from);
       }
       await refreshFiles();
       notifications.show({ title: "Undone", message: describeOp(op), color: "violet" });
@@ -470,8 +508,19 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                 leftSection={<IconPlus size={14} />}
                 styles={{ input: { background: "rgba(15,15,16,0.55)", borderColor: "rgba(124,58,237,0.2)" } }}
               />
-              <ActionIcon type="submit" variant="gradient" gradient={{ from: "violet", to: "pink" }}>
+              <ActionIcon type="submit" variant="gradient" gradient={{ from: "violet", to: "pink" }} title="New note">
                 <IconPlus size={14} />
+              </ActionIcon>
+              <ActionIcon
+                variant="light"
+                color="violet"
+                title="New folder"
+                onClick={() => {
+                  const name = window.prompt("Folder path", newPath.trim() || "wiki/folder");
+                  if (name) void createFolder(name);
+                }}
+              >
+                <IconFolderPlus size={14} />
               </ActionIcon>
             </Group>
           </form>
@@ -496,16 +545,31 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
               </Text>
             </Card>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={flatIds} strategy={verticalListSortingStrategy}>
+            <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd}>
+              <RootDrop>
                 <Stack gap={2}>
                   {filtered.map((node, i) => (
                     <motion.div key={node.path} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: i * 0.02 }}>
-                      <SortableFile node={node} depth={0} selected={selected} forceOpen={!!search} onOpen={openFile} onDelete={delFile} />
+                      <SortableFile
+                        node={node}
+                        depth={0}
+                        selected={selected}
+                        forceOpen={!!search}
+                        onOpen={openFile}
+                        onDelete={delFile}
+                        onNewNote={(parent) => {
+                          const name = window.prompt("Note name", "untitled");
+                          if (name) void createAt(`${parent}/${name}`);
+                        }}
+                        onNewFolder={(parent) => {
+                          const name = window.prompt("Folder name", "untitled");
+                          if (name) void createFolder(`${parent}/${name}`);
+                        }}
+                      />
                     </motion.div>
                   ))}
                 </Stack>
-              </SortableContext>
+              </RootDrop>
             </DndContext>
           )}
         </ScrollArea>
@@ -513,7 +577,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
           <Text size="xs" c="dimmed">
             Vault <Text span ff="monospace" c="violet">{vaultPath}</Text>
             <br />
-            wiki/ notes · raw/ sources · html/ live pages
+            wiki/ notes · raw/ sources · html/ live · drag to move
           </Text>
         </Box>
       </AppShell.Navbar>
@@ -612,6 +676,11 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
           setPalette(false);
           const name = window.prompt("New note path", "wiki/untitled");
           if (name) void createAt(name);
+        }}
+        onNewFolder={() => {
+          setPalette(false);
+          const name = window.prompt("Folder path", "wiki/folder");
+          if (name) void createFolder(name);
         }}
         onNewHtml={() => {
           setPalette(false);

@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { ActionIcon, Badge, Box, Group, Stack, Text, ThemeIcon, Collapse } from "@mantine/core";
-import { IconBook, IconChevronDown, IconChevronRight, IconCode, IconFolder, IconFolderOpen, IconPhoto, IconTrash } from "@tabler/icons-react";
-import { useSortable } from "@dnd-kit/sortable";
+import { useState, type ReactNode } from "react";
+import { ActionIcon, Badge, Group, Stack, Text, ThemeIcon, Collapse } from "@mantine/core";
+import { IconBook, IconChevronDown, IconChevronRight, IconCode, IconFolder, IconFolderOpen, IconFolderPlus, IconPhoto, IconPlus, IconTrash } from "@tabler/icons-react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
 import type { TreeNode } from "../types";
@@ -15,6 +15,8 @@ export function SortableFile({
   forceOpen,
   onOpen,
   onDelete,
+  onNewNote,
+  onNewFolder,
 }: {
   node: TreeNode;
   depth: number;
@@ -22,26 +24,36 @@ export function SortableFile({
   forceOpen?: boolean;
   onOpen: (p: string) => void;
   onDelete: (p: string) => void;
+  onNewNote?: (parent: string) => void;
+  onNewFolder?: (parent: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: node.path,
-    data: { type: node.type, path: node.path },
-  });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.45 : 1,
-  };
+  const drag = useDraggable({ id: node.path, data: { type: node.type, path: node.path } });
+  const drop = useDroppable({ id: node.path, data: { type: node.type, path: node.path } });
   if (node.type === "dir") {
     return (
-      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-        <FolderNode node={node} depth={depth} selected={selected} forceOpen={forceOpen} onOpen={onOpen} onDelete={onDelete} />
-      </div>
+      <FolderNode
+        node={node}
+        depth={depth}
+        selected={selected}
+        forceOpen={forceOpen}
+        onOpen={onOpen}
+        onDelete={onDelete}
+        onNewNote={onNewNote}
+        onNewFolder={onNewFolder}
+      />
     );
   }
   const active = selected === node.path;
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(drag.transform),
+    opacity: drag.isDragging ? 0.45 : 1,
+  };
+  const setRefs = (el: HTMLElement | null) => {
+    drag.setNodeRef(el);
+    drop.setNodeRef(el);
+  };
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setRefs} style={style} {...drag.attributes} {...drag.listeners}>
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ ...spring, delay: Math.min(depth * stagger, 0.16) }}>
       <Group
         justify="space-between"
@@ -74,6 +86,8 @@ function FolderNode({
   forceOpen,
   onOpen,
   onDelete,
+  onNewNote,
+  onNewFolder,
 }: {
   node: TreeNode;
   depth: number;
@@ -81,16 +95,29 @@ function FolderNode({
   forceOpen?: boolean;
   onOpen: (p: string) => void;
   onDelete: (p: string) => void;
+  onNewNote?: (parent: string) => void;
+  onNewFolder?: (parent: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const shown = forceOpen || open;
+  const drag = useDraggable({ id: node.path, data: { type: "dir", path: node.path } });
+  const drop = useDroppable({ id: `folder:${node.path}`, data: { type: "dir", path: node.path } });
+  const setRefs = (el: HTMLElement | null) => {
+    drag.setNodeRef(el);
+    drop.setNodeRef(el);
+  };
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(drag.transform),
+    opacity: drag.isDragging ? 0.45 : 1,
+  };
   return (
-    <Box>
+    <div style={style}>
+      <div ref={setRefs} {...drag.attributes} {...drag.listeners}>
       <Group
         justify="space-between"
         wrap="nowrap"
         onClick={() => setOpen((o) => !o)}
-        className="tree-row"
+        className={`tree-row${drop.isOver ? " is-drop" : ""}`}
         style={{ marginLeft: depth * 10 }}
       >
         <Group gap={6} wrap="nowrap">
@@ -107,25 +134,65 @@ function FolderNode({
             {node.children.length}
           </Badge>
         </Group>
-        <ActionIcon
-          size="xs"
-          variant="subtle"
-          color="gray"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(node.path);
-          }}
-        >
-          <IconTrash size={12} />
-        </ActionIcon>
+        <Group gap={2} wrap="nowrap">
+          {onNewNote && (
+            <ActionIcon
+              size="xs"
+              variant="subtle"
+              color="gray"
+              title="New note in folder"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewNote(node.path);
+              }}
+            >
+              <IconPlus size={12} />
+            </ActionIcon>
+          )}
+          {onNewFolder && (
+            <ActionIcon
+              size="xs"
+              variant="subtle"
+              color="gray"
+              title="New folder inside"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewFolder(node.path);
+              }}
+            >
+              <IconFolderPlus size={12} />
+            </ActionIcon>
+          )}
+          <ActionIcon
+            size="xs"
+            variant="subtle"
+            color="gray"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(node.path);
+            }}
+          >
+            <IconTrash size={12} />
+          </ActionIcon>
+        </Group>
       </Group>
+      </div>
       <Collapse in={shown}>
         <Stack gap={2} mt={2} style={{ borderLeft: "1px solid rgba(124,58,237,0.16)", marginLeft: 12 + depth * 2, paddingLeft: 6 }}>
           {node.children.map((child) => (
-            <SortableFile key={child.path} node={child} depth={depth + 1} selected={selected} forceOpen={forceOpen} onOpen={onOpen} onDelete={onDelete} />
+            <SortableFile key={child.path} node={child} depth={depth + 1} selected={selected} forceOpen={forceOpen} onOpen={onOpen} onDelete={onDelete} onNewNote={onNewNote} onNewFolder={onNewFolder} />
           ))}
         </Stack>
       </Collapse>
-    </Box>
+    </div>
+  );
+}
+
+export function RootDrop({ children }: { children: ReactNode }) {
+  const drop = useDroppable({ id: "folder:", data: { type: "dir", path: "" } });
+  return (
+    <div ref={drop.setNodeRef} className={drop.isOver ? "is-drop-root" : undefined} style={{ minHeight: "100%" }}>
+      {children}
+    </div>
   );
 }

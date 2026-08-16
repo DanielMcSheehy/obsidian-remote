@@ -2,7 +2,8 @@ export type VaultOp =
   | { kind: "write"; path: string; before: string; after: string }
   | { kind: "create"; path: string; after: string }
   | { kind: "delete"; files: Array<{ path: string; content: string }> }
-  | { kind: "move"; from: string; to: string; content: string };
+  | { kind: "move"; from: string; to: string; content?: string }
+  | { kind: "mkdir"; path: string };
 
 const MAX = 40;
 
@@ -18,5 +19,6 @@ export function describeOp(op: VaultOp | undefined): string {
     const n = op.files.length;
     return n === 1 ? `Undo delete ${op.files[0].path}` : `Undo delete ${n} files`;
   }
+  if (op.kind === "mkdir") return `Undo folder ${op.path}`;
   return `Undo move ${op.to} → ${op.from}`;
 }

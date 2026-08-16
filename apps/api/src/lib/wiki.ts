@@ -143,6 +143,11 @@ export function isLogPath(p: string): boolean {
   return p.replace(/^\/+/, "") === "log.md";
 }
 
+export function isLayoutRoot(p: string): boolean {
+  const n = p.replace(/^\/+/, "").replace(/\/+$/, "");
+  return n === "raw" || n === "wiki" || n === "html" || n === "AGENTS.md" || n === "index.md" || n === "log.md";
+}
+
 export function wantsForce(q: unknown, headers: Record<string, unknown>): boolean {
   const rec = (q || {}) as Record<string, string | undefined>;
   const h = (headers["x-vault-force"] as string | undefined) || "";

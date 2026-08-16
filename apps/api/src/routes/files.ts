@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "../lib/config.js";
 import { requireAppPassword } from "../lib/auth.js";
-import { isLogPath, isRawPath, rebuildIndex, wantsForce } from "../lib/wiki.js";
+import { isLayoutRoot, isLogPath, isRawPath, rebuildIndex, wantsForce } from "../lib/wiki.js";
 
 const VAULT_ROOT = path.join(config.dataDir, "vault");
 
@@ -78,6 +78,34 @@ function withMd(p: string): string {
   if (!n) return n;
   if (path.posix.extname(n)) return n;
   return `${n}.md`;
+}
+
+function relPath(p: string): string {
+  const n = decodeURIComponent(p || "")
+    .replace(/\0/g, "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  const normalized = path.posix.normalize(n).replace(/^(\.\.(\/|$))+/, "");
+  if (!normalized || normalized === ".") throw new Error("invalid path");
+  const parts = normalized.split("/");
+  if (parts.some((s) => !s || s === "." || s === ".." || s.startsWith("."))) throw new Error("invalid path");
+  return parts.join("/");
+}
+
+function listMoved(from: string, to: string, srcAbs: string): Array<{ from: string; to: string }> {
+  const out: Array<{ from: string; to: string }> = [{ from, to }];
+  if (!fs.statSync(srcAbs).isDirectory()) return out;
+  const walk = (dir: string, rel: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name.startsWith(".")) continue;
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      out.push({ from: `${from}/${child}`, to: `${to}/${child}` });
+      if (e.isDirectory()) walk(path.join(dir, e.name), child);
+    }
+  };
+  walk(srcAbs, "");
+  return out;
 }
 
 function listFiles(base = ""): Array<{ path: string; type: "file" | "dir"; size?: number; mtime?: string }> {
@@ -219,6 +247,89 @@ export async function filesRoutes(app: FastifyInstance) {
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, buf);
     return { ok: true, path: p, size: buf.length, embed: `![[${p}]]` };
+  });
+
+  // POST /api/files/mkdir { path } — empty folder on disk
+  app.post("/api/files/mkdir", async (req, reply) => {
+    const body = (req.body as { path?: string }) ?? {};
+    let p: string;
+    try {
+      p = relPath(body.path || "");
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if ((isRawPath(p) || isLayoutRoot(p)) && !wantsForce(req.query, req.headers as Record<string, unknown>)) {
+      return reply.code(403).send({ error: "protected", hint: "raw/ and layout roots need ?force=1" });
+    }
+    let full: string;
+    try {
+      full = safePath(p);
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if (fs.existsSync(full)) {
+      if (fs.statSync(full).isDirectory()) return { ok: true, path: p, existed: true };
+      return reply.code(409).send({ error: "a file already exists at that path" });
+    }
+    fs.mkdirSync(full, { recursive: true });
+    return { ok: true, path: p };
+  });
+
+  // POST /api/files/move { from, to } — rename or move into an existing folder
+  app.post("/api/files/move", async (req, reply) => {
+    const body = (req.body as { from?: string; to?: string }) ?? {};
+    let from: string;
+    let toArg: string;
+    try {
+      from = relPath(body.from || "");
+      toArg = relPath(body.to || "");
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if (from === toArg) return { ok: true, from, to: from, moved: [] as Array<{ from: string; to: string }> };
+    const force = wantsForce(req.query, req.headers as Record<string, unknown>);
+    if ((isRawPath(from) || isLogPath(from) || isLayoutRoot(from) || from === "AGENTS.md" || from === "index.md") && !force) {
+      return reply.code(403).send({ error: "protected", hint: "schema/raw paths need ?force=1" });
+    }
+    let src: string;
+    try {
+      src = safePath(from);
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if (!fs.existsSync(src)) return reply.code(404).send({ error: "not found" });
+    let destRel = toArg;
+    try {
+      const destProbe = safePath(toArg);
+      if (fs.existsSync(destProbe) && fs.statSync(destProbe).isDirectory()) {
+        destRel = `${toArg}/${path.posix.basename(from)}`;
+      }
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if (destRel === from) return { ok: true, from, to: from, moved: [] as Array<{ from: string; to: string }> };
+    if (destRel === from || destRel.startsWith(`${from}/`)) {
+      return reply.code(400).send({ error: "cannot move a folder into itself" });
+    }
+    if ((isRawPath(destRel) || isLayoutRoot(destRel)) && !force) {
+      return reply.code(403).send({ error: "protected", hint: "cannot move into raw/ or replace a layout root" });
+    }
+    let dest: string;
+    try {
+      dest = safePath(destRel);
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if (fs.existsSync(dest)) return reply.code(409).send({ error: "destination exists" });
+    const moved = listMoved(from, destRel, src);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.renameSync(src, dest);
+    try {
+      rebuildIndex();
+    } catch {
+      /* ignore */
+    }
+    return { ok: true, from, to: destRel, moved };
   });
 
   // PUT /api/files/:path -> create/update

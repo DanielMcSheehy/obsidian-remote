@@ -32,6 +32,8 @@ const TOOLS = [
   { name: "vault_list", description: "List vault files", inputSchema: { type: "object", properties: {} } },
   { name: "vault_read", description: "Read a vault file", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
   { name: "vault_write", description: "Write a wiki/ note", inputSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } },
+  { name: "vault_mkdir", description: "Create an empty vault folder", inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+  { name: "vault_move", description: "Move or rename a file or folder", inputSchema: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } }, required: ["from", "to"] } },
   { name: "vault_search", description: "Search markdown", inputSchema: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } },
   { name: "vault_graph", description: "Wikilink graph", inputSchema: { type: "object", properties: {} } },
   { name: "vault_lint", description: "Orphans and dangling links", inputSchema: { type: "object", properties: {} } },
@@ -62,6 +64,27 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
     case "vault_write":
       writeFileRel(String(args.path), String(args.content ?? ""));
       return { ok: true, path: args.path };
+    case "vault_mkdir": {
+      const p = String(args.path || "").replace(/^\/+/, "");
+      if (!p || p.startsWith("raw/") || p === "raw") throw new Error("protected path");
+      const full = path.join(vaultDir(), p);
+      if (!full.startsWith(vaultDir())) throw new Error("invalid path");
+      fs.mkdirSync(full, { recursive: true });
+      return { ok: true, path: p };
+    }
+    case "vault_move": {
+      const from = String(args.from || "").replace(/^\/+/, "");
+      const to = String(args.to || "").replace(/^\/+/, "");
+      if (!from || !to) throw new Error("from and to required");
+      if (from.startsWith("raw/") || from === "raw" || from === "log.md") throw new Error("protected path");
+      const src = path.join(vaultDir(), from);
+      const dest = path.join(vaultDir(), to);
+      if (!src.startsWith(vaultDir()) || !dest.startsWith(vaultDir())) throw new Error("invalid path");
+      if (!fs.existsSync(src)) throw new Error("not found");
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.renameSync(src, dest);
+      return { ok: true, from, to };
+    }
     case "vault_search":
       return { hits: searchVault(String(args.q || "")) };
     case "vault_graph":

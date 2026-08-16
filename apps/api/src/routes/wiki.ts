@@ -56,6 +56,7 @@ export async function wikiRoutes(app: FastifyInstance) {
       inbox: "GET|POST /api/inbox",
       mkdir: "POST /api/files/mkdir {path}",
       move: "POST /api/files/move {from,to}",
+      download: "GET /api/files/download?path=  or POST {paths}",
     },
     rules: [
       "Read index.md first",

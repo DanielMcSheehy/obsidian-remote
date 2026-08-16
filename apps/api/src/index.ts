@@ -64,6 +64,7 @@ async function build() {
       "View: GET /view/html/page.html  (cookie vault_view, Bearer, or ?token=)",
       "Folder: POST /api/files/mkdir {\"path\":\"wiki/folder\"}",
       "Move: POST /api/files/move {\"from\":\"wiki/a.md\",\"to\":\"wiki/folder\"}",
+      "Download: GET /api/files/download?path=  or POST /api/files/download {\"paths\":[...]}",
       "",
       "raw/ is immutable. wiki/ is yours. html/ is live. Read index.md first.",
       "",

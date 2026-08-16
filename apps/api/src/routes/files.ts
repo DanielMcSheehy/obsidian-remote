@@ -4,6 +4,7 @@ import path from "node:path";
 import { config } from "../lib/config.js";
 import { requireAppPassword } from "../lib/auth.js";
 import { isLayoutRoot, isLogPath, isRawPath, rebuildIndex, wantsForce } from "../lib/wiki.js";
+import { zipStore } from "../lib/zip.js";
 
 const VAULT_ROOT = path.join(config.dataDir, "vault");
 
@@ -221,7 +222,102 @@ export async function filesRoutes(app: FastifyInstance) {
       ".pdf": "application/pdf",
     };
     const buf = fs.readFileSync(full);
+    const download = (req.query as { download?: string }).download;
+    if (download === "1" || download === "true") {
+      reply.header("Content-Disposition", `attachment; filename="${path.basename(full).replace(/"/g, "")}"`);
+    }
     return reply.type(types[ext] || "application/octet-stream").send(buf);
+  });
+
+  function collectDownload(paths: string[]): Array<{ name: string; data: Buffer }> {
+    const seen = new Set<string>();
+    const out: Array<{ name: string; data: Buffer }> = [];
+    for (const raw of paths) {
+      let rel: string;
+      try {
+        rel = relPath(raw);
+      } catch {
+        continue;
+      }
+      let full: string;
+      try {
+        full = safePath(rel);
+      } catch {
+        continue;
+      }
+      if (!fs.existsSync(full)) continue;
+      const st = fs.statSync(full);
+      if (st.isFile()) {
+        if (!seen.has(rel)) {
+          seen.add(rel);
+          out.push({ name: rel, data: fs.readFileSync(full) });
+        }
+        continue;
+      }
+      if (st.isDirectory()) {
+        for (const f of listFiles(rel).filter((x) => x.type === "file")) {
+          if (seen.has(f.path)) continue;
+          seen.add(f.path);
+          out.push({ name: f.path, data: fs.readFileSync(safePath(f.path)) });
+        }
+      }
+    }
+    return out;
+  }
+
+  const MAX_ZIP = 80 * 1024 * 1024;
+
+  // GET /api/files/download?path= — one file, or a folder as zip
+  app.get("/api/files/download", async (req, reply) => {
+    const { path: p } = req.query as { path?: string };
+    if (!p) return reply.code(400).send({ error: "path query required" });
+    const entries = collectDownload([p]);
+    if (entries.length === 0) return reply.code(404).send({ error: "not found" });
+    const bytes = entries.reduce((n, e) => n + e.data.length, 0);
+    if (bytes > MAX_ZIP) return reply.code(413).send({ error: "max 80MB" });
+    let dest: string;
+    try {
+      dest = safePath(relPath(p));
+    } catch {
+      return reply.code(400).send({ error: "invalid path" });
+    }
+    if (entries.length === 1 && fs.existsSync(dest) && fs.statSync(dest).isFile()) {
+      const ext = path.extname(dest).toLowerCase();
+      const types: Record<string, string> = {
+        ".md": "text/markdown; charset=utf-8",
+        ".html": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".json": "application/json",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".pdf": "application/pdf",
+      };
+      return reply
+        .header("Content-Disposition", `attachment; filename="${path.basename(dest).replace(/"/g, "")}"`)
+        .type(types[ext] || "application/octet-stream")
+        .send(entries[0].data);
+    }
+    const zip = zipStore(entries);
+    const base = path.posix.basename(relPath(p)).replace(/"/g, "") || "vault";
+    return reply.header("Content-Disposition", `attachment; filename="${base}.zip"`).type("application/zip").send(zip);
+  });
+
+  // POST /api/files/download { paths } — zip many files/folders
+  app.post("/api/files/download", async (req, reply) => {
+    const body = (req.body as { paths?: string[] }) ?? {};
+    const paths = Array.isArray(body.paths) ? body.paths.slice(0, 400) : [];
+    if (paths.length === 0) return reply.code(400).send({ error: "paths required" });
+    const entries = collectDownload(paths);
+    if (entries.length === 0) return reply.code(404).send({ error: "not found" });
+    const bytes = entries.reduce((n, e) => n + e.data.length, 0);
+    if (bytes > MAX_ZIP) return reply.code(413).send({ error: "max 80MB" });
+    const zip = zipStore(entries);
+    return reply.header("Content-Disposition", 'attachment; filename="vault.zip"').type("application/zip").send(zip);
   });
 
   // POST /api/files/upload { path?, name, base64 } — binary attachments on disk

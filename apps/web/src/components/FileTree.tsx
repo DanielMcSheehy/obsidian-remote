@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ActionIcon, Badge, Group, Stack, Text, ThemeIcon, Collapse } from "@mantine/core";
-import { IconBook, IconChevronDown, IconChevronRight, IconCode, IconFolder, IconFolderOpen, IconFolderPlus, IconPhoto, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconBook, IconChevronDown, IconChevronRight, IconCode, IconDownload, IconFolder, IconFolderOpen, IconFolderPlus, IconPhoto, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
@@ -17,6 +17,9 @@ export function SortableFile({
   onDelete,
   onNewNote,
   onNewFolder,
+  checked,
+  onToggle,
+  onDownload,
 }: {
   node: TreeNode;
   depth: number;
@@ -26,6 +29,9 @@ export function SortableFile({
   onDelete: (p: string) => void;
   onNewNote?: (parent: string) => void;
   onNewFolder?: (parent: string) => void;
+  checked?: Set<string>;
+  onToggle?: (p: string, e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => void;
+  onDownload?: (p: string) => void;
 }) {
   const drag = useDraggable({ id: node.path, data: { type: node.type, path: node.path } });
   const drop = useDroppable({ id: node.path, data: { type: node.type, path: node.path } });
@@ -40,10 +46,14 @@ export function SortableFile({
         onDelete={onDelete}
         onNewNote={onNewNote}
         onNewFolder={onNewFolder}
+        checked={checked}
+        onToggle={onToggle}
+        onDownload={onDownload}
       />
     );
   }
   const active = selected === node.path;
+  const on = !!checked?.has(node.path);
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(drag.transform),
     opacity: drag.isDragging ? 0.45 : 1,
@@ -58,11 +68,30 @@ export function SortableFile({
       <Group
         justify="space-between"
         wrap="nowrap"
-        onClick={() => onOpen(node.path)}
-        className={`tree-row${active ? " is-active" : ""}`}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey) {
+            e.preventDefault();
+            onToggle?.(node.path, e);
+            return;
+          }
+          onOpen(node.path);
+        }}
+        className={`tree-row${active ? " is-active" : ""}${on ? " is-checked" : ""}`}
         style={{ marginLeft: depth * 10 }}
       >
         <Group gap={8} wrap="nowrap" style={{ overflow: "hidden" }}>
+          <input
+            type="checkbox"
+            className="tree-check"
+            checked={on}
+            onChange={() => undefined}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle?.(node.path, e);
+            }}
+            aria-label={`Select ${node.name}`}
+          />
           <ThemeIcon size="xs" variant={active ? "gradient" : "light"} gradient={{ from: "violet", to: "pink" }} color={active ? "violet" : IMAGE_EXT.test(node.path) ? "pink" : HTML_EXT.test(node.path) || SITE_SRC.test(node.path) ? "violet" : "gray"}>
             {IMAGE_EXT.test(node.path) ? <IconPhoto size={12} /> : HTML_EXT.test(node.path) || SITE_SRC.test(node.path) ? <IconCode size={12} /> : <IconBook size={12} />}
           </ThemeIcon>
@@ -70,9 +99,26 @@ export function SortableFile({
             {node.name.replace(/\.md$/i, "")}
           </Text>
         </Group>
-        <ActionIcon size="xs" variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}>
-          <IconTrash size={12} />
-        </ActionIcon>
+        <Group gap={2} wrap="nowrap">
+          {onDownload && (
+            <ActionIcon
+              size="xs"
+              variant="subtle"
+              color="gray"
+              title="Download"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDownload(node.path);
+              }}
+            >
+              <IconDownload size={12} />
+            </ActionIcon>
+          )}
+          <ActionIcon size="xs" variant="subtle" color="gray" onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}>
+            <IconTrash size={12} />
+          </ActionIcon>
+        </Group>
       </Group>
     </motion.div>
     </div>
@@ -88,6 +134,9 @@ function FolderNode({
   onDelete,
   onNewNote,
   onNewFolder,
+  checked,
+  onToggle,
+  onDownload,
 }: {
   node: TreeNode;
   depth: number;
@@ -97,9 +146,13 @@ function FolderNode({
   onDelete: (p: string) => void;
   onNewNote?: (parent: string) => void;
   onNewFolder?: (parent: string) => void;
+  checked?: Set<string>;
+  onToggle?: (p: string, e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => void;
+  onDownload?: (p: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const shown = forceOpen || open;
+  const on = !!checked?.has(node.path);
   const drag = useDraggable({ id: node.path, data: { type: "dir", path: node.path } });
   const drop = useDroppable({ id: `folder:${node.path}`, data: { type: "dir", path: node.path } });
   const setRefs = (el: HTMLElement | null) => {
@@ -116,11 +169,30 @@ function FolderNode({
       <Group
         justify="space-between"
         wrap="nowrap"
-        onClick={() => setOpen((o) => !o)}
-        className={`tree-row${drop.isOver ? " is-drop" : ""}`}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey) {
+            e.preventDefault();
+            onToggle?.(node.path, e);
+            return;
+          }
+          setOpen((o) => !o);
+        }}
+        className={`tree-row${drop.isOver ? " is-drop" : ""}${on ? " is-checked" : ""}`}
         style={{ marginLeft: depth * 10 }}
       >
         <Group gap={6} wrap="nowrap">
+          <input
+            type="checkbox"
+            className="tree-check"
+            checked={on}
+            onChange={() => undefined}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle?.(node.path, e);
+            }}
+            aria-label={`Select ${node.name}`}
+          />
           <ActionIcon size="xs" variant="subtle" color="gray">
             {shown ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
           </ActionIcon>
@@ -163,6 +235,21 @@ function FolderNode({
               <IconFolderPlus size={12} />
             </ActionIcon>
           )}
+          {onDownload && (
+            <ActionIcon
+              size="xs"
+              variant="subtle"
+              color="gray"
+              title="Download folder"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDownload(node.path);
+              }}
+            >
+              <IconDownload size={12} />
+            </ActionIcon>
+          )}
           <ActionIcon
             size="xs"
             variant="subtle"
@@ -180,7 +267,7 @@ function FolderNode({
       <Collapse in={shown}>
         <Stack gap={2} mt={2} style={{ borderLeft: "1px solid rgba(124,58,237,0.16)", marginLeft: 12 + depth * 2, paddingLeft: 6 }}>
           {node.children.map((child) => (
-            <SortableFile key={child.path} node={child} depth={depth + 1} selected={selected} forceOpen={forceOpen} onOpen={onOpen} onDelete={onDelete} onNewNote={onNewNote} onNewFolder={onNewFolder} />
+            <SortableFile key={child.path} node={child} depth={depth + 1} selected={selected} forceOpen={forceOpen} onOpen={onOpen} onDelete={onDelete} onNewNote={onNewNote} onNewFolder={onNewFolder} checked={checked} onToggle={onToggle} onDownload={onDownload} />
           ))}
         </Stack>
       </Collapse>

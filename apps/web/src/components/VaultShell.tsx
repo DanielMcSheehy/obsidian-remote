@@ -18,12 +18,12 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertTriangle, IconArrowBackUp, IconDatabase, IconDiamond, IconFiles, IconFolderPlus, IconGraph, IconInbox, IconLock, IconPaperclip, IconPlus, IconSearch, IconSparkles } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowBackUp, IconDatabase, IconDiamond, IconDownload, IconFiles, IconFolderPlus, IconGraph, IconInbox, IconLock, IconPaperclip, IconPlus, IconSearch, IconSparkles, IconTrash, IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DndContext, PointerSensor, pointerWithin, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { api, ensureViewCookie, fileUrl } from "../api";
+import { api, collapseSelection, downloadPaths, ensureViewCookie, fileUrl } from "../api";
 import type { FileEntry, GraphPayload, LintReport, MainView, NoteMode, OpenTab } from "../types";
-import { HTML_EXT, IMAGE_EXT, SITE_SRC, buildTree, filterTree, isMarkdownPath } from "../lib/tree";
+import { HTML_EXT, IMAGE_EXT, SITE_SRC, buildTree, filterTree, flattenIds, isMarkdownPath } from "../lib/tree";
 import { describeOp, pushOp, type VaultOp } from "../lib/undo";
 import { wordCount } from "../lib/wikilinks";
 import { spring } from "../theme";
@@ -55,14 +55,17 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
   const [edges, setEdges] = useState<GraphPayload["edges"]>([]);
   const [lint, setLint] = useState<LintReport | null>(null);
   const [history, setHistory] = useState<VaultOp[]>([]);
+  const [checked, setChecked] = useState<Set<string>>(() => new Set());
   const historyRef = useRef<VaultOp[]>([]);
   const tabsRef = useRef<OpenTab[]>([]);
   const selectedRef = useRef<string | null>(null);
+  const lastCheck = useRef<string | null>(null);
   const isResizing = useRef(false);
   const filePick = useRef<HTMLInputElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tree = useMemo(() => buildTree(files), [files]);
   const filtered = useMemo(() => filterTree(tree, search), [tree, search]);
+  const visibleIds = useMemo(() => flattenIds(filtered), [filtered]);
   const active = tabs.find((t) => t.path === selected) || null;
   const counts = wordCount(active?.content || "");
   tabsRef.current = tabs;
@@ -257,18 +260,86 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
     return out;
   }
 
+  function toggleChecked(p: string, e?: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }) {
+    if (e?.shiftKey && lastCheck.current) {
+      const order = visibleIds;
+      const a = order.indexOf(lastCheck.current);
+      const b = order.indexOf(p);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setChecked((prev) => {
+          const next = new Set(prev);
+          for (let i = lo; i <= hi; i++) next.add(order[i]);
+          return next;
+        });
+        lastCheck.current = p;
+        return;
+      }
+    }
+    lastCheck.current = p;
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+  }
+
+  async function downloadOne(p: string) {
+    try {
+      await downloadPaths([p]);
+    } catch (err) {
+      notifications.show({ title: "Download failed", message: String(err), color: "red" });
+    }
+  }
+
+  async function downloadChecked() {
+    const list = collapseSelection(checked);
+    if (list.length === 0) return;
+    try {
+      await downloadPaths(list);
+      notifications.show({ title: "Download started", message: list.length === 1 ? list[0] : `${list.length} items`, color: "violet" });
+    } catch (err) {
+      notifications.show({ title: "Download failed", message: String(err), color: "red" });
+    }
+  }
+
+  async function removePath(p: string) {
+    const snap = await snapshot(p);
+    await api(fileUrl(p), { method: "DELETE" });
+    if (snap.length) record({ kind: "delete", files: snap });
+    setTabs((prev) => prev.filter((t) => t.path !== p && !t.path.startsWith(`${p}/`)));
+    if (selectedRef.current === p || selectedRef.current?.startsWith(`${p}/`)) {
+      const next = tabsRef.current.find((t) => t.path !== p && !t.path.startsWith(`${p}/`));
+      setSelected(next?.path ?? null);
+    }
+  }
+
   async function delFile(p: string) {
     if (!confirm(`Delete ${p}?`)) return;
     try {
-      const snap = await snapshot(p);
-      await api(fileUrl(p), { method: "DELETE" });
-      if (snap.length) record({ kind: "delete", files: snap });
-      setTabs((prev) => prev.filter((t) => t.path !== p && !t.path.startsWith(`${p}/`)));
-      if (selected === p || selected?.startsWith(`${p}/`)) {
-        const next = tabsRef.current.find((t) => t.path !== p && !t.path.startsWith(`${p}/`));
-        setSelected(next?.path ?? null);
-      }
+      await removePath(p);
+      setChecked((prev) => {
+        const next = new Set(prev);
+        next.delete(p);
+        for (const x of [...next]) if (x.startsWith(`${p}/`)) next.delete(x);
+        return next;
+      });
       refreshFiles();
+    } catch (err) {
+      notifications.show({ title: "Delete failed", message: String(err), color: "red" });
+    }
+  }
+
+  async function deleteChecked() {
+    const list = collapseSelection(checked);
+    if (list.length === 0) return;
+    if (!confirm(`Delete ${list.length} item${list.length === 1 ? "" : "s"}?`)) return;
+    try {
+      for (const p of list) await removePath(p);
+      setChecked(new Set());
+      await refreshFiles();
+      notifications.show({ title: "Deleted", message: `${list.length} item${list.length === 1 ? "" : "s"}`, color: "violet" });
     } catch (err) {
       notifications.show({ title: "Delete failed", message: String(err), color: "red" });
     }
@@ -565,6 +636,9 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                           const name = window.prompt("Folder name", "untitled");
                           if (name) void createFolder(`${parent}/${name}`);
                         }}
+                        checked={checked}
+                        onToggle={toggleChecked}
+                        onDownload={(p) => void downloadOne(p)}
                       />
                     </motion.div>
                   ))}
@@ -573,6 +647,31 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
             </DndContext>
           )}
         </ScrollArea>
+        {checked.size > 0 && (
+          <Box p="xs" className="select-bar">
+            <Group justify="space-between" wrap="nowrap" gap={6}>
+              <Group gap={8} wrap="nowrap">
+                <Text size="xs" c="violet.2" fw={600}>
+                  {checked.size} selected
+                </Text>
+                <Text size="xs" c="dimmed" style={{ cursor: "pointer" }} onClick={() => setChecked(new Set(visibleIds))}>
+                  all
+                </Text>
+              </Group>
+              <Group gap={4} wrap="nowrap">
+                <ActionIcon size="sm" variant="subtle" color="violet" title="Download" onClick={() => void downloadChecked()}>
+                  <IconDownload size={14} />
+                </ActionIcon>
+                <ActionIcon size="sm" variant="subtle" color="red" title="Delete" onClick={() => void deleteChecked()}>
+                  <IconTrash size={14} />
+                </ActionIcon>
+                <ActionIcon size="sm" variant="subtle" color="gray" title="Clear selection" onClick={() => setChecked(new Set())}>
+                  <IconX size={14} />
+                </ActionIcon>
+              </Group>
+            </Group>
+          </Box>
+        )}
         <Box p="xs" style={{ borderTop: "1px solid rgba(124,58,237,0.08)", background: "rgba(15,15,16,0.35)" }}>
           <Text size="xs" c="dimmed">
             Vault <Text span ff="monospace" c="violet">{vaultPath}</Text>
@@ -624,6 +723,7 @@ export function VaultShell({ onLogout }: { onLogout: () => void }) {
                 onClose={closeTab}
                 onChange={(content) => setTabs((prev) => prev.map((t) => (t.path === active.path ? { ...t, content, dirty: true } : t)))}
                 onSave={() => save(active.path)}
+                onDownload={() => void downloadOne(active.path)}
                 onOpen={openFile}
                 onMode={setMode}
               />

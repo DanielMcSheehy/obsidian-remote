@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ActionIcon, Badge, Box, Button, Group, Tabs, Text, UnstyledButton } from "@mantine/core";
-import { IconDeviceFloppy, IconExternalLink, IconEye, IconPencil, IconX } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconDownload, IconExternalLink, IconEye, IconPencil, IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { FileEntry, NoteMode, OpenTab } from "../types";
 import { rawFileUrl, viewFileUrl } from "../api";
@@ -22,6 +22,7 @@ export function EditorPane({
   onClose,
   onChange,
   onSave,
+  onDownload,
   onOpen,
   onMode,
 }: {
@@ -33,6 +34,7 @@ export function EditorPane({
   onClose: (p: string) => void;
   onChange: (content: string) => void;
   onSave: () => void;
+  onDownload?: () => void;
   onOpen: (p: string) => void;
   onMode: (m: NoteMode) => void;
 }) {
@@ -130,6 +132,11 @@ export function EditorPane({
                 </Tabs.Tab>
               </Tabs.List>
             </Tabs>
+            {onDownload && (
+              <ActionIcon variant="subtle" color="gray" title="Download" onClick={onDownload}>
+                <IconDownload size={14} />
+              </ActionIcon>
+            )}
             <Button onClick={onSave} disabled={!active.dirty} size="xs" radius="md" leftSection={<IconDeviceFloppy size={14} />} variant="gradient" gradient={{ from: "violet", to: "pink" }} style={{ opacity: active.dirty ? 1 : 0.4 }}>
               Save
             </Button>

@@ -387,6 +387,30 @@ body::after {
   border-color: rgba(214, 188, 255, 0.28);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
+.tree-row.is-checked {
+  background: rgba(167, 139, 250, 0.1);
+  border-color: rgba(167, 139, 250, 0.22);
+}
+.tree-check {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  margin: 0;
+  border-radius: 3px;
+  border: 1px solid rgba(196, 181, 253, 0.45);
+  background: rgba(15, 15, 16, 0.6);
+  cursor: pointer;
+}
+.tree-check:checked {
+  background: linear-gradient(135deg, #a78bfa, #f472b6);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 2px rgba(7, 6, 12, 0.55);
+}
+.select-bar {
+  border-top: 1px solid rgba(167, 139, 250, 0.2);
+  background: rgba(88, 28, 135, 0.22);
+}
 
 .wiki-suggest {
   position: absolute;

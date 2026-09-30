@@ -689,6 +689,8 @@ body::after {
   line-height: 18px;
   text-align: center;
 }
+.thread-badge.held { background: #c2410c; }
+.bubble.held { border-style: dashed; border-color: rgba(251, 146, 60, 0.45); }
 .thread-meta { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); }
 .thread-pane {
   display: flex;

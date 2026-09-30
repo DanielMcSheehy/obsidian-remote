@@ -21,6 +21,25 @@ DEFINE FIELD IF NOT EXISTS body ON mail TYPE string;
 DEFINE FIELD IF NOT EXISTS read ON mail TYPE bool;
 DEFINE FIELD IF NOT EXISTS created_at ON mail TYPE datetime;
 DEFINE FIELD IF NOT EXISTS thread ON mail TYPE string;
+DEFINE TABLE IF NOT EXISTS inbox_thread SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS key ON inbox_thread TYPE string;
+DEFINE FIELD IF NOT EXISTS topic ON inbox_thread TYPE string;
+DEFINE FIELD IF NOT EXISTS participants ON inbox_thread TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS status ON inbox_thread TYPE string;
+DEFINE FIELD IF NOT EXISTS created_at ON inbox_thread TYPE datetime;
+DEFINE FIELD IF NOT EXISTS updated_at ON inbox_thread TYPE datetime;
+DEFINE INDEX IF NOT EXISTS inbox_thread_key ON inbox_thread FIELDS key UNIQUE;
+DEFINE TABLE IF NOT EXISTS inbox_msg SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS key ON inbox_msg TYPE string;
+DEFINE FIELD IF NOT EXISTS thread_key ON inbox_msg TYPE string;
+DEFINE FIELD IF NOT EXISTS author ON inbox_msg TYPE string;
+DEFINE FIELD IF NOT EXISTS body ON inbox_msg TYPE string;
+DEFINE FIELD IF NOT EXISTS held ON inbox_msg TYPE bool;
+DEFINE FIELD IF NOT EXISTS flags ON inbox_msg TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS read_by ON inbox_msg TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS idempotency_key ON inbox_msg TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created_at ON inbox_msg TYPE datetime;
+DEFINE INDEX IF NOT EXISTS inbox_msg_key ON inbox_msg FIELDS key UNIQUE;
 DEFINE TABLE IF NOT EXISTS wiki_node SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS path ON wiki_node TYPE string;
 DEFINE FIELD IF NOT EXISTS title ON wiki_node TYPE string;
@@ -87,6 +106,33 @@ export const FALLBACK_SCHEMA: SchemaTable[] = [
       { name: "thread", type: "string" },
       { name: "created_at", type: "datetime" },
     ],
+  },
+  {
+    name: "inbox_thread",
+    fields: [
+      { name: "key", type: "string" },
+      { name: "topic", type: "string" },
+      { name: "participants", type: "array<string>" },
+      { name: "status", type: "string" },
+      { name: "created_at", type: "datetime" },
+      { name: "updated_at", type: "datetime" },
+    ],
+    indexes: [{ name: "inbox_thread_key", def: "UNIQUE key" }],
+  },
+  {
+    name: "inbox_msg",
+    fields: [
+      { name: "key", type: "string" },
+      { name: "thread_key", type: "string" },
+      { name: "author", type: "string" },
+      { name: "body", type: "string" },
+      { name: "held", type: "bool" },
+      { name: "flags", type: "array<string>" },
+      { name: "read_by", type: "array<string>" },
+      { name: "idempotency_key", type: "option<string>" },
+      { name: "created_at", type: "datetime" },
+    ],
+    indexes: [{ name: "inbox_msg_key", def: "UNIQUE key" }],
   },
   {
     name: "wiki_node",

@@ -76,19 +76,34 @@ curl -H "Authorization: Bearer strong" \
 
 ## MCP
 
-`POST https://obsidian.swarmlaboratory.com/mcp` JSON-RPC (`initialize`, `tools/list`, `tools/call`). Bearer `APP_PASSWORD`.
+`POST https://obsidian.swarmlaboratory.com/mcp` JSON-RPC (`initialize`, `tools/list`, `tools/call`). Bearer `APP_PASSWORD` (full tools) or agent token (inbox tools only).
 
-## Agent inbox (no LLM)
+## Agent inbox (thread bus, no LLM)
+
+Identity is the bearer token. `from` is never a field. `vault` is the human.
 
 ```bash
 curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/json" \
   -d '{"name":"research"}' https://obsidian.swarmlaboratory.com/api/agents/register
 # → {agent:{name,token}}
-curl -H "Authorization: Bearer <agent-token>" https://obsidian.swarmlaboratory.com/api/inbox
+
+# human opens a thread (from=vault)
 curl -X POST -H "Authorization: Bearer strong" -H "Content-Type: application/json" \
-  -d '{"to":"research","subject":"hi","body":"ping"}' \
-  https://obsidian.swarmlaboratory.com/api/inbox
+  -d '{"to":"research","topic":"hi","body":"ping"}' \
+  https://obsidian.swarmlaboratory.com/api/inbox/open
+# → {message_id,thread_id,status:"delivered"}
+
+# agent pulls own inbox
+curl -H "Authorization: Bearer <agent-token>" https://obsidian.swarmlaboratory.com/api/inbox?full=1
+
+# agent replies
+curl -X POST -H "Authorization: Bearer <agent-token>" -H "Content-Type: application/json" \
+  -d '{"body":"pong"}' \
+  https://obsidian.swarmlaboratory.com/api/inbox/threads/<thread_id>/reply
 ```
+
+MCP (agent token or APP_PASSWORD): `inbox_pull`, `thread_reply`, `thread_open`, `agents_list`.
+Steering-shaped inbound is stored `held` (body hidden from the agent) until `POST /api/inbox/messages/:id/release`.
 
 ## Surreal (file-backed, internal)
 

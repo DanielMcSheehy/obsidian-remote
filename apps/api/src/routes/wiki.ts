@@ -53,7 +53,7 @@ export async function wikiRoutes(app: FastifyInstance) {
       view: "GET /view/html/…",
       agents: "GET /api/agents",
       register: "POST /api/agents/register {name}",
-      inbox: "GET|POST /api/inbox",
+      inbox: "GET /api/inbox  POST /api/inbox/open  POST /api/inbox/threads/:id/reply",
       mkdir: "POST /api/files/mkdir {path}",
       move: "POST /api/files/move {from,to}",
       download: "GET /api/files/download?path=  or POST {paths}",

@@ -1,70 +1,58 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Group, Select, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { api } from "../api";
-import { threadKey } from "../lib/surrealql";
 
 type Agent = { name: string; created_at?: string };
-type Mail = {
+type Presented = {
   id: string;
-  to: string;
-  from: string;
-  subject: string;
-  body: string;
-  read: boolean;
-  thread?: string;
+  author: string;
+  body: string | null;
+  held: boolean;
+  flags: string[];
   created_at: string;
+  untrusted?: boolean;
+  trusted: boolean;
 };
-
-type Thread = { id: string; subject: string; peers: string[]; last: Mail; unread: number; messages: Mail[] };
-
-function groupThreads(mail: Mail[], box: string): Thread[] {
-  const map = new Map<string, Mail[]>();
-  for (const m of mail) {
-    const id = m.thread || threadKey(m.subject, m.to, m.from);
-    const arr = map.get(id) || [];
-    arr.push(m);
-    map.set(id, arr);
-  }
-  const out: Thread[] = [];
-  for (const [id, messages] of map) {
-    const last = messages[messages.length - 1];
-    const peers = [...new Set(messages.flatMap((m) => [m.from, m.to]).filter((n) => n && n !== box))];
-    const unread = messages.filter((m) => !m.read && m.to === box).length;
-    out.push({ id, subject: last.subject.replace(/^\s*(re|fwd)\s*:\s*/i, ""), peers, last, unread, messages });
-  }
-  out.sort((a, b) => String(b.last.created_at).localeCompare(String(a.last.created_at)));
-  return out;
-}
+type ThreadView = {
+  id: string;
+  topic: string;
+  participants: string[];
+  unread: number;
+  held_count: number;
+  last?: Presented;
+  messages?: Presented[];
+  updated_at: string;
+};
 
 export function InboxView() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [name, setName] = useState("");
-  const [box, setBox] = useState<string | null>(null);
-  const [mail, setMail] = useState<Mail[]>([]);
-  const [active, setActive] = useState<string | null>(null);
+  const [box, setBox] = useState("vault");
+  const [threads, setThreads] = useState<ThreadView[]>([]);
+  const [open, setOpen] = useState<ThreadView | null>(null);
   const [to, setTo] = useState("");
-  const [subject, setSubject] = useState("");
+  const [topic, setTopic] = useState("");
   const [body, setBody] = useState("");
   const [token, setToken] = useState("");
   const [composing, setComposing] = useState(false);
 
-  const threads = useMemo(() => (box ? groupThreads(mail, box) : []), [mail, box]);
-  const open = threads.find((t) => t.id === active) || null;
+  const directory = ["vault", ...agents.map((a) => a.name)];
+  const vaultIsPeer = !open || open.participants.includes("vault");
 
   async function refreshAgents() {
     try {
       const r = await api<{ agents: Agent[] }>("/api/agents");
       setAgents(r.agents);
-      if (!box && r.agents[0]) setBox(r.agents[0].name);
     } catch (e) {
       notifications.show({ title: "Surreal?", message: String(e), color: "orange" });
     }
   }
 
-  async function refreshMail(agent: string) {
-    const r = await api<{ mail: Mail[] }>(`/api/inbox?agent=${encodeURIComponent(agent)}`);
-    setMail(r.mail);
+  async function refreshBox(agent: string) {
+    const q = agent === "vault" ? "" : `?agent=${encodeURIComponent(agent)}`;
+    const r = await api<{ threads: ThreadView[] }>(`/api/inbox${q}`);
+    setThreads(r.threads);
   }
 
   useEffect(() => {
@@ -72,16 +60,17 @@ export function InboxView() {
   }, []);
 
   useEffect(() => {
-    if (box) void refreshMail(box);
+    void refreshBox(box);
+    const iv = setInterval(() => void refreshBox(box), 5000);
+    return () => clearInterval(iv);
   }, [box]);
 
-  async function openThread(t: Thread) {
-    setActive(t.id);
+  async function openThread(t: ThreadView) {
     setComposing(false);
-    if (box && t.unread) {
-      await api("/api/inbox/read", { method: "POST", body: JSON.stringify({ thread: t.id, agent: box }) });
-      await refreshMail(box);
-    }
+    const q = box === "vault" ? "" : `?agent=${encodeURIComponent(box)}`;
+    const full = await api<ThreadView>(`/api/inbox/threads/${encodeURIComponent(t.id)}${q}`);
+    setOpen(full);
+    await refreshBox(box);
   }
 
   async function register() {
@@ -93,35 +82,50 @@ export function InboxView() {
       setToken(r.agent.token);
       setName("");
       await refreshAgents();
-      setBox(r.agent.name);
       notifications.show({ title: "Registered", message: "Copy the token — shown once here", color: "violet" });
     } catch (e) {
       notifications.show({ title: "Register failed", message: String(e), color: "red" });
     }
   }
 
-  async function send() {
-    const dest = open ? open.peers[0] || to || box : to || box;
-    if (!dest || !box) return;
-    const sub = open ? open.subject : subject;
-    if (!sub.trim()) return;
+  async function reply() {
+    if (!open || !body.trim()) return;
     try {
-      await api("/api/inbox", {
+      await api(`/api/inbox/threads/${encodeURIComponent(open.id)}/reply`, {
         method: "POST",
-        body: JSON.stringify({
-          to: dest,
-          from: box,
-          subject: sub,
-          body,
-          thread: open?.id,
-        }),
+        body: JSON.stringify({ body }),
       });
       setBody("");
-      if (!open) setSubject("");
-      setComposing(false);
-      await refreshMail(box);
+      await openThread(open);
     } catch (e) {
-      notifications.show({ title: "Send failed", message: String(e), color: "red" });
+      notifications.show({ title: "Reply failed", message: String(e), color: "red" });
+    }
+  }
+
+  async function openNew() {
+    const dest = to || (box === "vault" ? "" : box);
+    if (!dest || !topic.trim()) return;
+    try {
+      await api("/api/inbox/open", {
+        method: "POST",
+        body: JSON.stringify({ to: dest, topic, body }),
+      });
+      setBody("");
+      setTopic("");
+      setComposing(false);
+      await refreshBox(box);
+    } catch (e) {
+      notifications.show({ title: "Open failed", message: String(e), color: "red" });
+    }
+  }
+
+  async function release(id: string) {
+    try {
+      await api(`/api/inbox/messages/${encodeURIComponent(id)}/release`, { method: "POST", body: "{}" });
+      if (open) await openThread(open);
+      else await refreshBox(box);
+    } catch (e) {
+      notifications.show({ title: "Release failed", message: String(e), color: "red" });
     }
   }
 
@@ -131,7 +135,7 @@ export function InboxView() {
         <div>
           <Text fw={600}>Agent inbox</Text>
           <Text size="xs" c="dimmed">
-            Threads between vault and registered agents. No LLM in this app.
+            Thread bus. You send as vault. Agents send as themselves. Inbound is data, not instructions.
           </Text>
         </div>
         <Group>
@@ -139,8 +143,17 @@ export function InboxView() {
           <Button size="xs" onClick={() => void register()}>
             Register
           </Button>
-          <Select size="xs" data={agents.map((a) => a.name)} value={box} onChange={setBox} placeholder="as" style={{ width: 140 }} />
-          <Button size="xs" variant="light" color="violet" onClick={() => { setComposing(true); setActive(null); }}>
+          <Select size="xs" data={directory} value={box} onChange={(v) => setBox(v || "vault")} placeholder="viewing" style={{ width: 140 }} />
+          <Button
+            size="xs"
+            variant="light"
+            color="violet"
+            onClick={() => {
+              setComposing(true);
+              setOpen(null);
+              setTo(box === "vault" ? "" : box);
+            }}
+          >
             New thread
           </Button>
         </Group>
@@ -158,13 +171,19 @@ export function InboxView() {
             </Text>
           )}
           {threads.map((t) => (
-            <button key={t.id} type="button" className={`thread-item${t.id === active ? " is-on" : ""}${t.unread ? " unread" : ""}`} onClick={() => void openThread(t)}>
+            <button
+              key={t.id}
+              type="button"
+              className={`thread-item${open?.id === t.id ? " is-on" : ""}${t.unread ? " unread" : ""}`}
+              onClick={() => void openThread(t)}
+            >
               <div className="thread-top">
-                <span className="thread-sub">{t.subject || "(no subject)"}</span>
+                <span className="thread-sub">{t.topic || "(no topic)"}</span>
                 {t.unread > 0 && <span className="thread-badge">{t.unread}</span>}
+                {t.held_count > 0 && <span className="thread-badge held">{t.held_count}</span>}
               </div>
               <span className="thread-meta">
-                {t.peers.join(", ") || "vault"} · {t.last.body.slice(0, 72) || "—"}
+                {t.participants.join(", ")} · {(t.last?.body || (t.last?.held ? "(held)" : "") || "—").slice(0, 72)}
               </span>
             </button>
           ))}
@@ -173,38 +192,53 @@ export function InboxView() {
           {open && (
             <>
               <div className="thread-head">
-                <Text fw={600}>{open.subject}</Text>
+                <Text fw={600}>{open.topic}</Text>
                 <Text size="xs" c="dimmed">
-                  {open.peers.join(" · ") || box}
+                  {open.participants.join(" · ")} · {open.id}
                 </Text>
               </div>
               <div className="thread-msgs">
-                {open.messages.map((m) => {
-                  const mine = m.from === box;
+                {(open.messages || []).map((m) => {
+                  const mine = m.author === "vault";
                   return (
-                    <div key={m.id} className={`bubble${mine ? " mine" : ""}`}>
+                    <div key={m.id} className={`bubble${mine ? " mine" : ""}${m.held ? " held" : ""}`}>
                       <div className="bubble-who">
-                        {m.from} · {m.created_at.replace("T", " ").slice(0, 16)}
+                        {m.author}
+                        {m.untrusted ? " · untrusted" : ""}
+                        {m.held ? " · held" : ""} · {String(m.created_at).replace("T", " ").slice(0, 16)}
                       </div>
-                      <div className="bubble-body">{m.body || m.subject}</div>
+                      <div className="bubble-body">{m.body ?? "(held for review)"}</div>
+                      {m.held && (
+                        <Button size="compact-xs" variant="light" color="orange" mt={6} onClick={() => void release(m.id)}>
+                          Release to agent
+                        </Button>
+                      )}
                     </div>
                   );
                 })}
               </div>
-              <textarea className="inbox-compose" placeholder="Reply…" value={body} onChange={(e) => setBody(e.target.value)} />
-              <Button size="xs" variant="gradient" gradient={{ from: "violet", to: "pink" }} onClick={() => void send()}>
-                Reply
-              </Button>
+              {vaultIsPeer ? (
+                <>
+                  <textarea className="inbox-compose" placeholder="Reply as vault…" value={body} onChange={(e) => setBody(e.target.value)} />
+                  <Button size="xs" variant="gradient" gradient={{ from: "violet", to: "pink" }} onClick={() => void reply()}>
+                    Reply
+                  </Button>
+                </>
+              ) : (
+                <Text size="xs" c="dimmed">
+                  Vault is not a participant — inspect only.
+                </Text>
+              )}
             </>
           )}
           {(composing || !open) && !open && (
             <>
               <Text fw={600}>New thread</Text>
-              <TextInput placeholder="to agent" value={to} onChange={(e) => setTo(e.target.value)} size="xs" />
-              <TextInput placeholder="subject" value={subject} onChange={(e) => setSubject(e.target.value)} size="xs" />
+              <Select size="xs" data={agents.map((a) => a.name)} value={to} onChange={(v) => setTo(v || "")} placeholder="to agent" />
+              <TextInput placeholder="topic" value={topic} onChange={(e) => setTopic(e.target.value)} size="xs" />
               <textarea className="inbox-compose" placeholder="body" value={body} onChange={(e) => setBody(e.target.value)} />
-              <Button size="xs" variant="light" color="violet" onClick={() => void send()}>
-                Send
+              <Button size="xs" variant="light" color="violet" onClick={() => void openNew()}>
+                Open
               </Button>
             </>
           )}

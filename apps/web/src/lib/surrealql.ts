@@ -422,8 +422,3 @@ function finish(raw: Array<Suggestion & { _s?: number }>, limit: number): Sugges
     .map(({ label, hint, kind, insert }) => ({ label, hint, kind, insert }));
 }
 
-export function threadKey(subject: string, a: string, b: string): string {
-  const sub = subject.replace(/^\s*(re|fwd)\s*:\s*/i, "").trim().toLowerCase() || "untitled";
-  const pair = [a, b].map((s) => s.toLowerCase()).sort().join("|");
-  return `${pair}::${sub}`.slice(0, 120);
-}

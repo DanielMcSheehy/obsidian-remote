@@ -103,7 +103,7 @@ export function createSurrealStore(): InboxStore {
     },
     async insertThread(t) {
       await surrealQuery(
-        "CREATE inbox_thread SET key = $key, topic = $topic, participants = $participants, status = $status, created_at = $created_at, updated_at = $updated_at",
+        "CREATE inbox_thread SET key = $key, topic = $topic, participants = $participants, status = $status, created_at = <datetime>$created_at, updated_at = <datetime>$updated_at",
         {
           key: t.id,
           topic: t.topic,
@@ -115,11 +115,11 @@ export function createSurrealStore(): InboxStore {
       );
     },
     async touchThread(id, updatedAt) {
-      await surrealQuery("UPDATE inbox_thread SET updated_at = $updated_at WHERE key = $id", { id, updated_at: updatedAt });
+      await surrealQuery("UPDATE inbox_thread SET updated_at = <datetime>$updated_at WHERE key = $id", { id, updated_at: updatedAt });
     },
     async insertMessage(m) {
       await surrealQuery(
-        "CREATE inbox_msg SET key = $key, thread_key = $thread_key, author = $author, body = $body, held = $held, flags = $flags, read_by = $read_by, idempotency_key = $idempotency_key, created_at = $created_at",
+        "CREATE inbox_msg SET key = $key, thread_key = $thread_key, author = $author, body = $body, held = $held, flags = $flags, read_by = $read_by, idempotency_key = $idempotency_key, created_at = <datetime>$created_at",
         {
           key: m.id,
           thread_key: m.thread_id,
